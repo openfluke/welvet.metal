@@ -150,6 +150,13 @@ WELVET_API welvet_status welvet_lstm_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* GDN (Gated DeltaNet) — WGD1 wire. Float32 FormatNone host f32 (Go exact_bit).
+ * packed: InQKV|InZ|InB|InA|Out|Conv|ALog|DtBias|γ. dtype ignored. */
+WELVET_API welvet_status welvet_gdn_forward_f32(
+    int32_t batch, int32_t seq, int32_t hidden, int32_t num_key_heads, int32_t num_value_heads,
+    int32_t key_head_dim, int32_t value_head_dim, int32_t conv_kernel, int32_t dtype, int32_t backend,
+    const float* packed, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif
