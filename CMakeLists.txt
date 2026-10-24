@@ -50,6 +50,9 @@ set(WELVET_CORE_SOURCES
   src/layers/embedding/embedding.cpp
   src/layers/sequential/sequential.cpp
   src/layers/residual/residual.cpp
+  src/layers/cnn1/cnn1.cpp
+  src/layers/cnn2/cnn2.cpp
+  src/layers/cnn3/cnn3.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp

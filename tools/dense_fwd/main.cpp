@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -713,6 +714,152 @@ static int run_swiglu(int bench_iters) {
   return 0;
 }
 
+static int write_cnn_out(const std::vector<float>& pre, const std::vector<float>& post) {
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WVCO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
+static int bench_or_once_cnn(int bench_iters, const std::function<welvet_status()>& once,
+                             std::vector<float>& /*pre*/, std::vector<float>& /*post*/) {
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    welvet_status st = once();
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+      return 1;
+    }
+  }
+  return 0;
+}
+
+static int run_cnn1(int bench_iters) {
+  int32_t batch = 0, in_c = 0, filters = 0, seq = 0, kernel = 0, stride = 0, padding = 0;
+  int32_t act = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&in_c, 1) || !read_exact(&filters, 1) ||
+      !read_exact(&seq, 1) || !read_exact(&kernel, 1) || !read_exact(&stride, 1) ||
+      !read_exact(&padding, 1) || !read_exact(&act, 1) || !read_exact(&dtype, 1) ||
+      !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVC1 header\n");
+    return 2;
+  }
+  const int patch = in_c * kernel;
+  const int s = stride <= 0 ? 1 : stride;
+  const int out_len = (seq + 2 * padding - kernel) / s + 1;
+  std::vector<float> W(static_cast<std::size_t>(filters * patch));
+  if (!read_exact(W.data(), W.size())) return 2;
+  uint32_t bias_len = 0;
+  if (!read_exact(&bias_len, 1)) return 2;
+  std::vector<double> bias(bias_len);
+  if (bias_len && !read_exact(bias.data(), bias.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * in_c * seq));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(static_cast<std::size_t>(batch * filters * out_len));
+  std::vector<float> post(pre.size());
+  auto once = [&]() -> welvet_status {
+    return welvet_cnn1_forward_f32(batch, in_c, filters, seq, kernel, stride, padding, act, dtype,
+                                   backend, W.data(), bias.data(), bias.size(), x.data(),
+                                   pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_cnn_out(pre, post);
+}
+
+static int run_cnn2(int bench_iters) {
+  int32_t batch = 0, in_c = 0, filters = 0, height = 0, width = 0, kernel = 0, stride = 0,
+          padding = 0;
+  int32_t act = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&in_c, 1) || !read_exact(&filters, 1) ||
+      !read_exact(&height, 1) || !read_exact(&width, 1) || !read_exact(&kernel, 1) ||
+      !read_exact(&stride, 1) || !read_exact(&padding, 1) || !read_exact(&act, 1) ||
+      !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVC2 header\n");
+    return 2;
+  }
+  const int s = stride <= 0 ? 1 : stride;
+  const int out_h = (height + 2 * padding - kernel) / s + 1;
+  const int out_w = (width + 2 * padding - kernel) / s + 1;
+  const int patch = in_c * kernel * kernel;
+  std::vector<float> W(static_cast<std::size_t>(filters * patch));
+  if (!read_exact(W.data(), W.size())) return 2;
+  uint32_t bias_len = 0;
+  if (!read_exact(&bias_len, 1)) return 2;
+  std::vector<double> bias(bias_len);
+  if (bias_len && !read_exact(bias.data(), bias.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * in_c * height * width));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(static_cast<std::size_t>(batch * filters * out_h * out_w));
+  std::vector<float> post(pre.size());
+  auto once = [&]() -> welvet_status {
+    return welvet_cnn2_forward_f32(batch, in_c, filters, height, width, kernel, stride, padding,
+                                   act, dtype, backend, W.data(), bias.data(), bias.size(),
+                                   x.data(), pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_cnn_out(pre, post);
+}
+
+static int run_cnn3(int bench_iters) {
+  int32_t batch = 0, in_c = 0, filters = 0, depth = 0, height = 0, width = 0, kernel = 0,
+          stride = 0, padding = 0;
+  int32_t act = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&in_c, 1) || !read_exact(&filters, 1) ||
+      !read_exact(&depth, 1) || !read_exact(&height, 1) || !read_exact(&width, 1) ||
+      !read_exact(&kernel, 1) || !read_exact(&stride, 1) || !read_exact(&padding, 1) ||
+      !read_exact(&act, 1) || !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVC3 header\n");
+    return 2;
+  }
+  const int s = stride <= 0 ? 1 : stride;
+  const int out_d = (depth + 2 * padding - kernel) / s + 1;
+  const int out_h = (height + 2 * padding - kernel) / s + 1;
+  const int out_w = (width + 2 * padding - kernel) / s + 1;
+  const int patch = in_c * kernel * kernel * kernel;
+  std::vector<float> W(static_cast<std::size_t>(filters * patch));
+  if (!read_exact(W.data(), W.size())) return 2;
+  uint32_t bias_len = 0;
+  if (!read_exact(&bias_len, 1)) return 2;
+  std::vector<double> bias(bias_len);
+  if (bias_len && !read_exact(bias.data(), bias.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * in_c * depth * height * width));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(static_cast<std::size_t>(batch * filters * out_d * out_h * out_w));
+  std::vector<float> post(pre.size());
+  auto once = [&]() -> welvet_status {
+    return welvet_cnn3_forward_f32(batch, in_c, filters, depth, height, width, kernel, stride,
+                                   padding, act, dtype, backend, W.data(), bias.data(),
+                                   bias.size(), x.data(), pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_cnn_out(pre, post);
+}
+
 static int run_seqmix(int /*bench_iters*/) {
   int32_t n = 0;
   if (!read_exact(&n, 1) || n < 0 || n > 64) {
@@ -746,7 +893,7 @@ static void usage() {
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
-               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO\n");
+               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO | WVC1/2/3→WVCO\n");
 }
 
 int main(int argc, char** argv) {
@@ -815,6 +962,15 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WSX1", 4) == 0) {
     return run_seqmix(bench_iters);
+  }
+  if (std::memcmp(magic, "WVC1", 4) == 0) {
+    return run_cnn1(bench_iters);
+  }
+  if (std::memcmp(magic, "WVC2", 4) == 0) {
+    return run_cnn2(bench_iters);
+  }
+  if (std::memcmp(magic, "WVC3", 4) == 0) {
+    return run_cnn3(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

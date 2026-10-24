@@ -14,8 +14,10 @@ fi
 
 cd "$W2A"
 echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
-# Default: Dense. Layer-only: MHA / SWIGLU / RMSNORM / LAYERNORM / SOFTMAX / EMBEDDING / SEQUENTIAL / RESIDUAL / SEQMIX.
-if [[ "${SEQMIX:-0}" == "1" ]]; then
+# Default: Dense. Layer-only: … / SEQMIX / CNN.
+if [[ "${CNN:-0}" == "1" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalCNN$' -timeout 60m
+elif [[ "${SEQMIX:-0}" == "1" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalSeqmix$' -timeout 10m
 elif [[ "${RESIDUAL:-0}" == "1" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalResidual$' -timeout 45m
