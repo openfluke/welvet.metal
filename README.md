@@ -8,8 +8,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.00`** |
-| **Engine board** | **0 / 100** (same 10 categories as Go Welvet — start unchecked) |
+| **Version** | **`0.01`** |
+| **Engine board** | **~early** — Dense FormatNone×34 Metal forward exact_bit vs Go (w2a `go_v_metal`) |
 | **Compute** | Apple GPU (Metal) — primary · Apple Neural Engine — separate gate |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) Go **v1.2.0** (100/100) |
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) **0.67** (semantics/wire to mirror — **score not inherited**) |
@@ -35,7 +35,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | Shared buffer upload/download | ✅ |
 | Smoke PSO `welvet_smoke_saxpy` | ✅ |
 | C ABI version / init / gaps | ✅ |
-| Dense / layers / volume / train / systems / model | ⬜ |
+| Dense FormatNone×34 Metal forward (soft-double GEMV, exact_bit vs Go) | ✅ |
+| Remaining layers / volume / train / systems / model | ⬜ |
 
 ---
 
@@ -155,8 +156,8 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** Metal
 
 | # | Category (Go board) | Wt | Metal today | Status | Earned |
 |---:|---|---:|---|:---:|---:|
-| 1 | **Foundation** — `core`, `weights`, quant, Metal compute base, tiling policy | 15 | dtype/activate enums; no FormatNone×34 Metal | ⬜ | **0** |
-| 2 | **Dense MatVec** — FormatNone×34 + quants; fwd/bwd/update on Metal | 15 | shader stub only | ⬜ | **0** |
+| 1 | **Foundation** — `core`, `weights`, quant, Metal compute base, tiling policy | 15 | FormatNone×34 encode/decode + Metal soft-double compute | 🚧 | **~8** |
+| 2 | **Dense MatVec** — FormatNone×34 + quants; fwd/bwd/update on Metal | 15 | FormatNone×34 **forward** exact_bit (w2a); quants/bwd gap | 🚧 | **~7** |
 | 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Sequential, Residual, seqmix | 14 | — | ⬜ | **0** |
 | 4 | **CNN / RNN / LSTM** | 6 | — | ⬜ | **0** |
 | 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | — | ⬜ | **0** |
@@ -165,7 +166,7 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** Metal
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | — | ⬜ | **0** |
 | 9 | **Training credit** — 29 modes + cameral BranchModes / CamSync | 8 | TrainMode enum only | ⬜ | **0** |
 | 10 | **Peak fused / no host ALU** — fused Metal kernels, decoder fuse, provenance | 14 | — | ⬜ | **0** |
-| | **Total → version** | **100** | | **⬜** | **0 / 100 → `0.00`** |
+| | **Total → version** | **100** | | **🚧** | **~15 / 100 → `0.01`** (recompute formally after more gates) |
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused Metal. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -269,7 +270,7 @@ FormatNone storage. Metal column = validated on-device path (not host decode pre
 | # | DType | Pack/RT | Metal F | Metal B | Metal update | Notes |
 |--:|-------|:------:|:------:|:------:|:------:|-------|
 | 0 | Float64 | ⬜ | ⬜ | ⬜ | ⬜ | |
-| 1 | Float32 | ⬜ | ⬜ | ⬜ | ⬜ | likely first ALU |
+| 1 | Float32 | ✅ | ✅ | ⬜ | ⬜ | soft-double GEMV |
 | 2 | Float16 | ⬜ | ⬜ | ⬜ | ⬜ | native Metal half |
 | 3 | BFloat16 | ⬜ | ⬜ | ⬜ | ⬜ | |
 | 4 | FP8E4M3 | ⬜ | ⬜ | ⬜ | ⬜ | |
@@ -353,7 +354,7 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 
 | ID | Layer | Forward target | Backward target | Metal F | Metal B |
 |---:|---|---|---|:---:|:---:|
-| 0 | **Dense** | GEMV/GEMM, bias, activation | dX, dW, act'; ApplyGradSGD | ⬜ | ⬜ |
+| 0 | **Dense** | GEMV/GEMM, bias, activation | dX, dW, act'; ApplyGradSGD | ✅ FormatNone×34 | ⬜ |
 | 1 | **MultiHeadAttention** | Q/K/V/O, attention, masks, RoPE, cache | Proj + attn + RoPE grads (ModeSelf) | ⬜ | ⬜ |
 | 2 | **SwiGLU** | Gate/up/down, SiLU product | All projs + product/SiLU′ | ⬜ | ⬜ |
 | 3 | **RMSNorm** | RMS + scale | dX + scale grad | ⬜ | ⬜ |
@@ -392,17 +393,18 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 | Composition | Nested non-Dense; shared stores; branch order; no duplicate updates | ⬜ |
 | Discrete/index/rule | Explicit differentiability matching Go | ⬜ |
 
-### Dense first slice (M1 — suggested tick order)
+### Dense first slice (M1)
 
 | # | Case | Status |
 |---|---|:---:|
-| 1 | Dispatch `welvet_dense_matvec_f32` (command buffer) | ⬜ |
-| 2 | Bias + activation on device (or labeled host epilogue) | ⬜ |
-| 3 | Leaf forward exact_bit vs Go Float32 | ⬜ |
-| 4 | Leaf forward ×34 FormatNone | ⬜ |
-| 5 | NormalBP dX/dW/db + SGD Float32 resident | ⬜ |
-| 6 | NormalBP ×34 + volume `1×1×1` / `2×2×2` | ⬜ |
-| 7 | Speed table goµs / metalµs / spd%Δ + device identity | ⬜ |
+| 1 | Metal soft-double GEMV (Apple has **no HW float64**) | ✅ |
+| 2 | Bias + activation on Metal (`welvet_dense_bias_act`) | ✅ |
+| 3 | Leaf forward exact_bit vs Go Float32 | ✅ |
+| 4 | Leaf forward ×34 FormatNone exact_bit vs Go | ✅ `go_v_metal` |
+| 5 | 3-way speed Go / C++ / Metal + pick winner | ✅ (tiny shapes: C++ wins; Metal ~dispatch-bound) |
+| 6 | **No host MatVec / no f32-acc substitute** | ✅ |
+| 7 | NormalBP dX/dW/db + SGD Float32 resident | ⬜ |
+| 8 | NormalBP ×34 + volume `1×1×1` / `2×2×2` | ⬜ |
 
 ---
 
@@ -595,7 +597,7 @@ Measure cold compile, initial upload, warm resident, sync, export separately. Me
 | Milestone | Concrete outcome | Status |
 |---|---|:---:|
 | **M0** — Metal host + this README runway | Device/library/buffer/smoke + full Go inventory checklist | ✅ |
-| **M1** — Dense FormatNone forward on Metal | w2a forward parity (+ speed) | ⬜ |
+| **M1** — Dense FormatNone forward on Metal | w2a `go_v_metal` exact_bit×34 + 3-way speed | ✅ |
 | **M2** — Dense NormalBP resident | Multi-step train parity | ⬜ |
 | **M3** — Dtype / quant breadth | ×34 (+ quants or honest gaps) | ⬜ |
 | **M4** — Layer breadth | Transformer → CNN/RNN → extended | ⬜ |

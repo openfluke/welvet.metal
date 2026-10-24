@@ -2,27 +2,27 @@
 
 **Authoritative checklist:** [README.md](README.md) — full Go Welvet inventory as Metal rebuild gates (3D volumetric engine). Tick there.
 
-**Version `0.00`** — engine board **0 / 100**. This file is the machine-oriented dump (`welvet_dense_fwd --gaps`).
+**Version `0.01`** — Dense FormatNone×34 Metal forward exact_bit vs Go. This file is the machine-oriented dump (`welvet_dense_fwd --gaps`).
 
 ```bash
 ./scripts/build_macos.sh
-./build/example_metal_smoke
+./scripts/macos_build_w2a.sh          # go_v_metal Dense forward
 ./build/welvet_dense_fwd --version
 ./build/welvet_dense_fwd --identity
 ./build/welvet_dense_fwd --gaps
 ```
 
-## Done (M0 host — not engine-board credit)
+## Done
 
 | ID | Detail |
 |---|---|
-| Metal device | `MTLDevice` probe, list, runtime identity |
-| Shader library | Runtime compile `shaders/welvet_dense.metal` |
-| Shared buffers | Alloc / upload / download |
-| Pipeline smoke | `welvet_smoke_saxpy` PSO |
-| C ABI | version / init / gaps counters |
-| macOS build | `scripts/build_macos.sh` |
+| M0 host | Device, library, buffers, smoke PSO, C ABI |
+| FormatNone×34 | encode/decode (Go staging) |
+| Dense Metal F | soft-double GEMV + bias/act; **no host MatVec**; `fastMathEnabled=NO` |
+| w2a `go_v_metal` | exact_bit×34 vs Go; 3-way speed Go/C++/Metal |
+
+**Note:** Apple Metal has **no hardware float64**. Soft-double (float2) matches Go’s f64 MatVec when fast-math is off. Tiny shapes are dispatch-bound (~400µs) — C++ wins those; larger shapes are next for Metal speed.
 
 ## Open
 
-Everything else in [README.md](README.md): foundation, Dense, 23 layers, 34 dtypes, 20 quants, 29 train modes, Grid/Line/Mesh, systems, model/IO, lucy, CamSync, peak fused, w2a `Go_v_Metal`, iOS, ANE.
+NormalBP, remaining layers, quants, volumes, train modes, systems, model/IO, … — see [README.md](README.md).

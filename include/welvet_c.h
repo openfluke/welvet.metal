@@ -33,11 +33,23 @@ WELVET_API int32_t welvet_metal_available(void);
 WELVET_API int32_t welvet_gaps_count(void);
 WELVET_API int32_t welvet_gaps_done(void);
 
-/* Dense Metal forward — returns gap? until shaders land. */
+/* One-shot Dense Metal forward (mount+execute+release internally). */
 WELVET_API welvet_status welvet_dense_forward_f32(
     int32_t batch, int32_t in, int32_t out, int32_t act, int32_t dtype, int32_t backend,
     const float* W_init, const double* bias, size_t bias_len, const float* x, float* pre,
     float* post);
+
+/* Resident session: mount once, execute many (w2a mount vs exec timing). */
+typedef struct welvet_dense_session welvet_dense_session;
+
+WELVET_API welvet_status welvet_dense_mount(
+    int32_t batch, int32_t in, int32_t out, int32_t act, int32_t dtype,
+    const float* W_init, const double* bias, size_t bias_len, welvet_dense_session** sess);
+
+WELVET_API welvet_status welvet_dense_execute(welvet_dense_session* s, const float* x, float* pre,
+                                              float* post);
+
+WELVET_API void welvet_dense_release(welvet_dense_session* s);
 
 #ifdef __cplusplus
 }

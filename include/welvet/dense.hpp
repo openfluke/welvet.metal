@@ -8,19 +8,23 @@
 
 namespace welvet::dense {
 
+// Metal-only Dense. No host MatVec backend. No silent CPU substitute.
 struct Layer {
-  int32_t in = 0;
-  int32_t out = 0;
-  Activation act = Activation::Linear;
-  DType dtype = DType::Float32;
-  weights::Store weights;
-  std::vector<double> bias;
+  int input_height = 0;
+  int output_height = 0;
+  Activation activation = Activation::Linear;
+  WeightStore weights;
 };
 
-Status new_layer(int32_t in_dim, int32_t out_dim, Activation act, DType dt, const float* W_init,
-                 Layer* layer_out);
+Status new_layer(int in_h, int out_h, Activation act, DType dt, const float* init_or_null,
+                 Layer* layer);
 
-// Metal Dense forward — gap? until shaders + residency land.
-Status forward_f32(const Layer& layer, const TensorF32& x, TensorF32* pre, TensorF32* post);
+// True when FormatNone Dense forward on Metal can match Go's f64 MatVec contract
+// for this dtype. Unsupported dtypes hard-error — never a different path.
+bool dtype_supported_metal_forward(DType dt);
+
+// FormatNone Dense forward entirely on Metal (GEMV + bias + act). Staging
+// decode of FormatNone → double for upload is host prep only, not a compute fallback.
+Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
 } // namespace welvet::dense

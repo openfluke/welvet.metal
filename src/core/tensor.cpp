@@ -1,9 +1,12 @@
 #include "welvet/tensor.hpp"
 
-// Tensor helpers stay header-light for M0; this TU anchors the library.
 namespace welvet {
-namespace {
-volatile int tensor_tu_anchor = 0;
+
+TensorF32 TensorF32::zeros(int64_t a, int64_t b) {
+  TensorF32 t;
+  t.shape = {a, b};
+  t.data.assign(static_cast<std::size_t>(a * b), 0.0f);
+  return t;
 }
-void tensor_force_link() { tensor_tu_anchor = 1; }
+
 } // namespace welvet

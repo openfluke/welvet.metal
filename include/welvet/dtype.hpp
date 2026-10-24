@@ -46,7 +46,6 @@ enum class DType : int32_t {
 constexpr int kNumDTypes = 34;
 
 std::string_view dtype_name(DType dt);
-// True only for dtypes with a validated Metal FormatNone path.
-bool dtype_implemented_forward(DType dt);
+bool dtype_implemented_forward(DType dt); // true only for implemented storage paths
 
 } // namespace welvet

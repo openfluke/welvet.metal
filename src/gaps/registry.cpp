@@ -15,16 +15,19 @@ const std::vector<Entry>& build() {
       {"abi.version", "interop", "welvet_version + welvet_metal_init C ABI", true},
       {"platform.macos", "platform", "macOS Apple silicon host build", true},
 
-      // --- Core / weights (port from welvet.cpp semantics) ---
-      {"core.dtype.all34", "core", "gap? all 34 DType names + Metal FormatNone gates", false},
-      {"core.activate", "core", "gap? Activate/ActivateDeriv parity vs Go (host+Metal)", false},
-      {"core.fp_codecs", "core", "gap? FP8/FP4/NF4/FP6 pack-unpack for Metal storage", false},
-      {"weights.formatnone.x34", "weights", "gap? FormatNone pack/decode ×34 on Metal", false},
-      {"weights.matvec.metal", "weights", "gap? wire welvet_dense_matvec_f32 + residency", false},
+      // --- Core / weights (Go FormatNone semantics; compute on Metal only) ---
+      {"core.dtype.all34", "core", "34 DType + FormatNone encode/decode (staging)", true},
+      {"core.activate", "core", "Activate f64 on Metal bias_act kernel (Go codes)", true},
+      {"core.fp_codecs", "core", "FP8/FP4/NF4/FP6 pack-unpack (FormatNone)", true},
+      {"weights.formatnone.x34", "weights", "FormatNone pack/decode ×34", true},
+      {"weights.matvec.metal", "weights",
+       "Metal soft-double GEMV (Apple has no HW double; Go f64 contract)", true},
       {"weights.resident", "weights", "gap? upload-once / reuse across fwd/bwd/update", false},
+      {"metal.no_fallback", "metal", "no host MatVec / no f32-acc substitute", true},
 
       // --- Layers (same 23 kinds as welvet.cpp / Go) ---
-      {"dense.forward.metal", "layers", "gap? Dense Metal forward FormatNone", false},
+      {"dense.forward.metal", "layers",
+       "Dense Metal forward FormatNone×34 (soft-double GEMV + bias/act)", true},
       {"dense.normalbp.metal", "layers", "gap? Dense NormalBP dX/dW/db + SGD Metal", false},
       {"mha.forward.metal", "layers", "gap? MHA ModeSelf Metal", false},
       {"mha.normalbp.metal", "layers", "gap? MHA NormalBP Metal", false},

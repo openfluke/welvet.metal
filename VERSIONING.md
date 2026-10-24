@@ -5,7 +5,8 @@
 
 | Tag | Meaning |
 |-----|---------|
-| **0.00** | Bedrock — Metal host scaffold; **0 / 100** on the engine board |
+| **0.00** | Bedrock — Metal host scaffold |
+| **0.01** | Dense FormatNone×34 Metal forward exact_bit vs Go (`go_v_metal`) |
 | **0.x** | `round(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on Apple GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 

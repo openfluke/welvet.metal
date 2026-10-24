@@ -48,6 +48,8 @@ welvet::Status compile_at(const std::string& path) {
                                           length:src.size()
                                         encoding:NSUTF8StringEncoding];
   MTLCompileOptions* opts = [[MTLCompileOptions alloc] init];
+  // Soft-double / Go f64-parity requires exact IEEE ops — never fast-math.
+  opts.fastMathEnabled = NO;
   id<MTLLibrary> lib = [device newLibraryWithSource:ns options:opts error:&err];
   if (!lib) {
     std::string msg = "Metal compile failed";

@@ -42,9 +42,10 @@ std::string_view dtype_name(DType dt) {
   return "unknown";
 }
 
-bool dtype_implemented_forward(DType) {
-  // No FormatNone Metal path signed yet — flip per dtype as w2a gates pass.
-  return false;
+bool dtype_implemented_forward(DType dt) {
+  // FormatNone dense forward: all 34 storage dtypes (encode → MatVec f64-acc).
+  const int id = static_cast<int>(dt);
+  return id >= 0 && id < kNumDTypes;
 }
 
 } // namespace welvet
