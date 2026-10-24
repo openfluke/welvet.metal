@@ -42,6 +42,7 @@ set(WELVET_CORE_SOURCES
   src/weights/native_codec.cpp
   src/layers/dense/dense.cpp
   src/layers/dense/session.cpp
+  src/layers/mha/mha.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp

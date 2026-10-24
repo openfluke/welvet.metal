@@ -51,6 +51,13 @@ WELVET_API welvet_status welvet_dense_execute(welvet_dense_session* s, const flo
 
 WELVET_API void welvet_dense_release(welvet_dense_session* s);
 
+/* MHA ModeSelf forward — WVM1 wire. Q/K/V/O Dense on Metal; attn ALU host f64 (Go/cpp baseline). */
+WELVET_API welvet_status welvet_mha_forward_f32(
+    int32_t batch, int32_t seq, int32_t d_model, int32_t num_heads, int32_t num_kv_heads,
+    int32_t head_dim, int32_t max_seq_len, int32_t mask, int32_t pos, int32_t dtype, int32_t backend,
+    const float* Q, const float* K, const float* V, const float* O, const float* x, float* pre,
+    float* post);
+
 #ifdef __cplusplus
 }
 #endif

@@ -143,12 +143,94 @@ static int run_dense(bool v1, bool v2, bool v3, int bench_iters) {
   return 0;
 }
 
+static int run_mha(int bench_iters) {
+  int32_t batch = 0, seq = 0, d_model = 0, num_heads = 0, num_kv = 0, head_dim = 0, msl = 0;
+  int32_t mask = 0, pos = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&seq, 1) || !read_exact(&d_model, 1) ||
+      !read_exact(&num_heads, 1) || !read_exact(&num_kv, 1) || !read_exact(&head_dim, 1) ||
+      !read_exact(&msl, 1) || !read_exact(&mask, 1) || !read_exact(&pos, 1) ||
+      !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVM1 header\n");
+    return 2;
+  }
+  if (num_heads <= 0 || d_model <= 0 || d_model % num_heads != 0) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad mha dims\n");
+    return 2;
+  }
+  const int hd = head_dim > 0 ? head_dim : d_model / num_heads;
+  const int kv_heads = num_kv > 0 ? num_kv : num_heads;
+  const int q_dim = num_heads * hd;
+  const int kv_dim = kv_heads * hd;
+
+  std::vector<float> Q(static_cast<std::size_t>(q_dim * d_model));
+  std::vector<float> K(static_cast<std::size_t>(kv_dim * d_model));
+  std::vector<float> V(static_cast<std::size_t>(kv_dim * d_model));
+  std::vector<float> O(static_cast<std::size_t>(d_model * q_dim));
+  if (!read_exact(Q.data(), Q.size()) || !read_exact(K.data(), K.size()) ||
+      !read_exact(V.data(), V.size()) || !read_exact(O.data(), O.size())) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVM1 weights\n");
+    return 2;
+  }
+  std::vector<float> x(static_cast<std::size_t>(batch * seq * d_model));
+  if (!read_exact(x.data(), x.size())) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVM1 input\n");
+    return 2;
+  }
+  std::vector<float> pre(static_cast<std::size_t>(batch * seq * q_dim));
+  std::vector<float> post(static_cast<std::size_t>(batch * seq * d_model));
+
+  auto once = [&]() -> welvet_status {
+    return welvet_mha_forward_f32(batch, seq, d_model, num_heads, num_kv, head_dim, msl, mask, pos,
+                                  dtype, backend, Q.data(), K.data(), V.data(), O.data(), x.data(),
+                                  pre.data(), post.data());
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    welvet_status st = once();
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+      return 1;
+    }
+  }
+
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WVMO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
 static void usage() {
   std::fprintf(stderr,
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
-               "  --bench=N   WVB2 mount_ns + exec_ns (N warm) + WVO1\n"
-               "  stdin WVD3 dense forward → stdout WVO1\n");
+               "  --bench=N\n"
+               "  stdin WVD3 dense → WVO1 | WVM1 mha → WVMO\n");
 }
 
 int main(int argc, char** argv) {
@@ -190,6 +272,10 @@ int main(int argc, char** argv) {
     usage();
     return 2;
   }
+  (void)welvet_metal_init();
+  if (std::memcmp(magic, "WVM1", 4) == 0) {
+    return run_mha(bench_iters);
+  }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;
   const bool v1 = std::memcmp(magic, "WVD1", 4) == 0;
@@ -197,6 +283,5 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "welvet_dense_fwd: bad magic %.4s\n", magic);
     return 2;
   }
-  (void)welvet_metal_init();
   return run_dense(v1, v2, v3, bench_iters);
 }
