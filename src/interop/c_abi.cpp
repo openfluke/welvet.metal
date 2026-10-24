@@ -5,6 +5,7 @@
 #include "welvet/metal/device.hpp"
 #include "welvet/metal/matvec.hpp"
 #include "welvet/mha.hpp"
+#include "welvet/rmsnorm.hpp"
 #include "welvet/status.hpp"
 #include "welvet/swiglu.hpp"
 #include "welvet/tensor.hpp"
@@ -161,6 +162,40 @@ welvet_status welvet_swiglu_forward_f32(int32_t batch, int32_t seq, int32_t inpu
 
   welvet::TensorF32 pre_t, post_t;
   st = welvet::swiglu::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_rmsnorm_forward_f32(int32_t batch, int32_t seq, int32_t dim, double eps,
+                                         int32_t dtype, int32_t /*backend*/, const float* gamma,
+                                         const float* x, float* pre, float* post) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || !gamma || !x || !pre || !post) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "rmsnorm: invalid argument");
+    return st;
+  }
+
+  welvet::rmsnorm::Config cfg;
+  cfg.dim = dim;
+  cfg.eps = eps;
+
+  welvet::rmsnorm::Layer layer;
+  auto st = welvet::rmsnorm::new_configured(cfg, static_cast<welvet::DType>(dtype), gamma, &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::rmsnorm::forward(layer, input, &pre_t, &post_t);
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));

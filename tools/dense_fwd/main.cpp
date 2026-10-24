@@ -225,6 +225,77 @@ static int run_mha(int bench_iters) {
   return 0;
 }
 
+static int run_rmsnorm(int bench_iters) {
+  int32_t batch = 0, seq = 0, dim = 0, dtype = 1, backend = 0;
+  double eps = 0.0;
+  if (!read_exact(&batch, 1) || !read_exact(&seq, 1) || !read_exact(&dim, 1) ||
+      !read_exact(&eps, 1) || !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVR1 header\n");
+    return 2;
+  }
+  if (batch <= 0 || seq <= 0 || dim <= 0) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad rmsnorm dims\n");
+    return 2;
+  }
+
+  std::vector<float> gamma(static_cast<std::size_t>(dim));
+  if (!read_exact(gamma.data(), gamma.size())) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVR1 gamma\n");
+    return 2;
+  }
+  std::vector<float> x(static_cast<std::size_t>(batch * seq * dim));
+  if (!read_exact(x.data(), x.size())) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WVR1 input\n");
+    return 2;
+  }
+  std::vector<float> pre(static_cast<std::size_t>(batch * seq * dim));
+  std::vector<float> post(static_cast<std::size_t>(batch * seq * dim));
+
+  auto once = [&]() -> welvet_status {
+    return welvet_rmsnorm_forward_f32(batch, seq, dim, eps, dtype, backend, gamma.data(), x.data(),
+                                      pre.data(), post.data());
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    welvet_status st = once();
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+      return 1;
+    }
+  }
+
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WVRO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
 static int run_swiglu(int bench_iters) {
   int32_t batch = 0, seq = 0, input_dim = 0, inter = 0, dtype = 1, backend = 0;
   if (!read_exact(&batch, 1) || !read_exact(&seq, 1) || !read_exact(&input_dim, 1) ||
@@ -303,7 +374,7 @@ static void usage() {
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
-               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO\n");
+               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO\n");
 }
 
 int main(int argc, char** argv) {
@@ -351,6 +422,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WVS1", 4) == 0) {
     return run_swiglu(bench_iters);
+  }
+  if (std::memcmp(magic, "WVR1", 4) == 0) {
+    return run_rmsnorm(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;
