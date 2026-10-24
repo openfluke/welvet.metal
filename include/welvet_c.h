@@ -157,6 +157,12 @@ WELVET_API welvet_status welvet_gdn_forward_f32(
     int32_t key_head_dim, int32_t value_head_dim, int32_t conv_kernel, int32_t dtype, int32_t backend,
     const float* packed, const float* x, float* pre, float* post);
 
+/* Mamba — WMB1 wire. Dense soft-double In/Out FormatNone×34 + host f64 selective scan.
+ * packed: InProj|OutProj|ALog|DSkip. */
+WELVET_API welvet_status welvet_mamba_forward_f32(
+    int32_t batch, int32_t seq, int32_t d_model, int32_t d_state, int32_t expand, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif
