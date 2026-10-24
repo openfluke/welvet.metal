@@ -124,6 +124,22 @@ WELVET_API welvet_status welvet_cnn3_forward_f32(
     int32_t kernel, int32_t stride, int32_t padding, int32_t act, int32_t dtype, int32_t backend,
     const float* W, const double* bias, size_t bias_len, const float* x, float* pre, float* post);
 
+/* ConvT1/2/3 — WVT1/2/3 wire. Host f64 scatter + Activate (Go/cpp exact_bit). No bias. */
+WELVET_API welvet_status welvet_convt1_forward_f32(
+    int32_t batch, int32_t in_c, int32_t filters, int32_t seq_len, int32_t kernel, int32_t stride,
+    int32_t padding, int32_t output_padding, int32_t act, int32_t dtype, int32_t backend,
+    const float* W, const float* x, float* pre, float* post);
+
+WELVET_API welvet_status welvet_convt2_forward_f32(
+    int32_t batch, int32_t in_c, int32_t filters, int32_t height, int32_t width, int32_t kernel,
+    int32_t stride, int32_t padding, int32_t output_padding, int32_t act, int32_t dtype,
+    int32_t backend, const float* W, const float* x, float* pre, float* post);
+
+WELVET_API welvet_status welvet_convt3_forward_f32(
+    int32_t batch, int32_t in_c, int32_t filters, int32_t depth, int32_t height, int32_t width,
+    int32_t kernel, int32_t stride, int32_t padding, int32_t output_padding, int32_t act,
+    int32_t dtype, int32_t backend, const float* W, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif
