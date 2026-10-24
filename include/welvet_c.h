@@ -69,6 +69,11 @@ WELVET_API welvet_status welvet_rmsnorm_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,
     const float* gamma, const float* x, float* pre, float* post);
 
+/* LayerNorm forward — WVL1 wire. γ/β FormatNone×34 + host f64 mean/var (Go/cpp exact_bit). */
+WELVET_API welvet_status welvet_layernorm_forward_f32(
+    int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,
+    const float* gamma, const float* beta, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif
