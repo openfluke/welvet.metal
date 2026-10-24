@@ -1,0 +1,18 @@
+/build/
+/build-*/
+/cmake-build-*/
+/.cache/
+compile_commands.json
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.metallib
+.DS_Store
+src/.write_ok
+
+# Local Go↔Metal snapshot logs (live under w2a/logs/; ignore if dropped here)
+/macos.txt
+/macos_arm64.txt
