@@ -93,6 +93,12 @@ WELVET_API welvet_status welvet_sequential_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* Residual y=F(x)+x — WRE1 wire. packed: Depth×[Dim×Dim] Dense F, x: [batch*seq*dim]
+ * (seq=1 → [batch*dim]). pre: last F child pre; post: skip-add. F via Metal soft-double Dense. */
+WELVET_API welvet_status welvet_residual_forward_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif

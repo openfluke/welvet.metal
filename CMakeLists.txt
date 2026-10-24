@@ -49,6 +49,7 @@ set(WELVET_CORE_SOURCES
   src/layers/softmax/softmax.cpp
   src/layers/embedding/embedding.cpp
   src/layers/sequential/sequential.cpp
+  src/layers/residual/residual.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp
