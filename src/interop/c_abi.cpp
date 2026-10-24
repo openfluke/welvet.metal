@@ -7,6 +7,7 @@
 #include "welvet/mha.hpp"
 #include "welvet/embedding.hpp"
 #include "welvet/residual.hpp"
+#include "welvet/seqmix.hpp"
 #include "welvet/sequential.hpp"
 #include "welvet/layernorm.hpp"
 #include "welvet/rmsnorm.hpp"
@@ -401,6 +402,34 @@ welvet_status welvet_residual_forward_f32(int32_t batch, int32_t seq, int32_t di
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_seqmix_kind_name(int32_t kind, char* buf, int32_t buf_len) {
+  if (!buf || buf_len <= 0) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "seqmix: bad buf");
+    return st;
+  }
+  const char* name = welvet::seqmix::kind_name(static_cast<welvet::seqmix::Kind>(kind));
+  if (!name) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "seqmix: unknown kind %d", static_cast<int>(kind));
+    return st;
+  }
+  std::snprintf(buf, static_cast<std::size_t>(buf_len), "%s", name);
+  return to_c(welvet::Status::Ok());
+}
+
+int32_t welvet_seqmix_mha_kind(void) {
+  return static_cast<int32_t>(welvet::seqmix::mha_mixer_kind());
+}
+int32_t welvet_seqmix_mamba_kind(void) {
+  return static_cast<int32_t>(welvet::seqmix::mamba_kind());
+}
+int32_t welvet_seqmix_gdn_kind(void) {
+  return static_cast<int32_t>(welvet::seqmix::gdn_kind());
 }
 
 } // extern "C"

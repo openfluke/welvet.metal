@@ -713,13 +713,40 @@ static int run_swiglu(int bench_iters) {
   return 0;
 }
 
+static int run_seqmix(int /*bench_iters*/) {
+  int32_t n = 0;
+  if (!read_exact(&n, 1) || n < 0 || n > 64) {
+    std::fprintf(stderr, "welvet_dense_fwd: short/bad WSX1 header\n");
+    return 2;
+  }
+  std::vector<int32_t> kinds(static_cast<std::size_t>(n));
+  if (n > 0 && !read_exact(kinds.data(), kinds.size())) return 2;
+  if (!write_exact("WSXO", 4) || !write_exact(&n, 1)) return 2;
+  for (int32_t k : kinds) {
+    char name[64]{};
+    welvet_status st = welvet_seqmix_kind_name(k, name, static_cast<int32_t>(sizeof(name)));
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: seqmix kind %d: %s\n", static_cast<int>(k),
+                   st.message);
+      return 2;
+    }
+    const int32_t len = static_cast<int32_t>(std::strlen(name));
+    if (!write_exact(&len, 1) || !write_exact(name, static_cast<std::size_t>(len))) return 2;
+  }
+  const int32_t tags[3] = {welvet_seqmix_mha_kind(), welvet_seqmix_mamba_kind(),
+                           welvet_seqmix_gdn_kind()};
+  const int32_t n_tags = 3;
+  if (!write_exact(&n_tags, 1) || !write_exact(tags, 3)) return 2;
+  return 0;
+}
+
 static void usage() {
   std::fprintf(stderr,
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
-               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO\n");
+               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO\n");
 }
 
 int main(int argc, char** argv) {
@@ -785,6 +812,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WRE1", 4) == 0) {
     return run_residual(bench_iters);
+  }
+  if (std::memcmp(magic, "WSX1", 4) == 0) {
+    return run_seqmix(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

@@ -99,6 +99,15 @@ WELVET_API welvet_status welvet_residual_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* seqmix Kind name — WSX1 smoke. kind: 0=attention 1=ssm 2=linear_attn 3=conv_mix.
+ * Writes NUL-terminated name into buf (max buf_len). */
+WELVET_API welvet_status welvet_seqmix_kind_name(int32_t kind, char* buf, int32_t buf_len);
+
+/* Mixer Kind tags: mha→0, mamba→1, gdn→2 (matches seqmix.Kind iota). */
+WELVET_API int32_t welvet_seqmix_mha_kind(void);
+WELVET_API int32_t welvet_seqmix_mamba_kind(void);
+WELVET_API int32_t welvet_seqmix_gdn_kind(void);
+
 #ifdef __cplusplus
 }
 #endif

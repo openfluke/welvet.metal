@@ -63,7 +63,9 @@ const std::vector<Entry>& build() {
       {"gdn.metal", "layers", "gap? GDN f32 Metal", false},
       {"stack.metal", "layers", "gap? Stack NestedStack-of-Dense Metal", false},
       {"parallel.metal", "layers", "gap? Parallel branches + BranchModes Metal", false},
-      {"seqmix.metal", "layers", "gap? seqmix helper Metal", false},
+      {"seqmix.metal", "layers",
+       "seqmix Kind/Contract helper + MHA/Mamba/GDN tags + WSX1 smoke (no Forward)", true},
+      {"seqmix.conv_mix.metal", "layers", "gap? seqmix KindConvMix implementor Metal", false},
 
       // --- Runtime / architecture / training ---
       {"arch.grid", "architecture", "gap? Grid topology + remote links Metal residency", false},
