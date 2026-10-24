@@ -225,6 +225,73 @@ static int run_mha(int bench_iters) {
   return 0;
 }
 
+static int run_embedding(int bench_iters) {
+  int32_t batch = 0, vocab = 0, emb = 0, seq = 0, in_rank = 2, in_last = 1, act = -1, dtype = 1,
+          backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&vocab, 1) || !read_exact(&emb, 1) ||
+      !read_exact(&seq, 1) || !read_exact(&in_rank, 1) || !read_exact(&in_last, 1) ||
+      !read_exact(&act, 1) || !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WEM1 header\n");
+    return 2;
+  }
+  if (batch <= 0 || vocab <= 0 || emb <= 0 || seq <= 0 || in_last <= 0) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad embedding dims\n");
+    return 2;
+  }
+  std::vector<float> W(static_cast<std::size_t>(vocab * emb));
+  if (!read_exact(W.data(), W.size())) return 2;
+  const int x_n = batch * seq * in_last;
+  std::vector<float> x(static_cast<std::size_t>(x_n));
+  if (!read_exact(x.data(), x.size())) return 2;
+  const int out_n = (in_rank == 1 ? seq : batch * seq) * emb;
+  std::vector<float> pre(static_cast<std::size_t>(out_n));
+  std::vector<float> post(pre.size());
+
+  auto once = [&]() -> welvet_status {
+    return welvet_embedding_forward_f32(batch, vocab, emb, seq, in_rank, in_last, act, dtype,
+                                        backend, W.data(), x.data(), pre.data(), post.data());
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    welvet_status st = once();
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+      return 1;
+    }
+  }
+
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WEMO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
 static int run_softmax(int bench_iters) {
   int32_t n = 0, dim = 0, seq = 0, kind = 0, rows = 0, cols = 0, gumbel_seed = 0, dtype = 1,
           backend = 0, rank = 0, mask_len = 0, hier_len = 0;
@@ -521,7 +588,8 @@ static void usage() {
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
-               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO\n");
+               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
+               "WEM1→WEMO\n");
 }
 
 int main(int argc, char** argv) {
@@ -578,6 +646,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WSM1", 4) == 0) {
     return run_softmax(bench_iters);
+  }
+  if (std::memcmp(magic, "WEM1", 4) == 0) {
+    return run_embedding(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

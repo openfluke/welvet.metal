@@ -81,6 +81,12 @@ WELVET_API welvet_status welvet_softmax_forward_f32(
     int32_t rank, const int32_t* shape, const uint8_t* mask, int32_t mask_len, const int32_t* hier,
     int32_t hier_len, const float* x, float* pre, float* post);
 
+/* Embedding gather — WEM1 wire. Vocab×Emb FormatNone×34 decode_row_f64 (Go/cpp exact_bit). */
+WELVET_API welvet_status welvet_embedding_forward_f32(
+    int32_t batch, int32_t vocab, int32_t emb, int32_t seq_len, int32_t in_rank, int32_t in_last,
+    int32_t act, int32_t dtype, int32_t backend, const float* W, const float* x, float* pre,
+    float* post);
+
 #ifdef __cplusplus
 }
 #endif

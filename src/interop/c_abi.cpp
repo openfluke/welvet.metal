@@ -5,6 +5,7 @@
 #include "welvet/metal/device.hpp"
 #include "welvet/metal/matvec.hpp"
 #include "welvet/mha.hpp"
+#include "welvet/embedding.hpp"
 #include "welvet/layernorm.hpp"
 #include "welvet/rmsnorm.hpp"
 #include "welvet/softmax.hpp"
@@ -285,6 +286,48 @@ welvet_status welvet_softmax_forward_f32(int32_t n, int32_t dim, int32_t seq_len
     std::snprintf(err.message, sizeof(err.message), "softmax: unexpected out len");
     return err;
   }
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_embedding_forward_f32(int32_t batch, int32_t vocab, int32_t emb,
+                                           int32_t seq_len, int32_t in_rank, int32_t in_last,
+                                           int32_t act, int32_t dtype, int32_t /*backend*/,
+                                           const float* W, const float* x, float* pre, float* post) {
+  if (batch <= 0 || vocab <= 0 || emb <= 0 || seq_len <= 0 || in_last <= 0 || !W || !x || !pre ||
+      !post) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "embedding: invalid argument");
+    return st;
+  }
+  if (in_rank < 1 || in_rank > 3) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "embedding: bad in_rank");
+    return st;
+  }
+  welvet::embedding::Config cfg;
+  cfg.vocab_size = vocab;
+  cfg.embedding_dim = emb;
+  cfg.seq_len = seq_len;
+  welvet::embedding::Layer layer;
+  auto st = welvet::embedding::new_configured(cfg, static_cast<welvet::DType>(dtype),
+                                              static_cast<welvet::Activation>(act), W, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  if (in_rank == 1) {
+    input.shape = {seq_len};
+  } else if (in_rank == 2) {
+    input.shape = {batch, seq_len};
+  } else {
+    input.shape = {batch, seq_len, in_last};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq_len * in_last));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::embedding::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
   return to_c(welvet::Status::Ok());
