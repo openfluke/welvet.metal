@@ -15,6 +15,7 @@
 #include "welvet/kmeans.hpp"
 #include "welvet/lstm.hpp"
 #include "welvet/mamba.hpp"
+#include "welvet/parallel.hpp"
 #include "welvet/rnn.hpp"
 #include "welvet/embedding.hpp"
 #include "welvet/residual.hpp"
@@ -808,6 +809,51 @@ welvet_status welvet_kmeans_forward_f32(int32_t n, int32_t feature_dim, int32_t 
   input.data.assign(x, x + static_cast<std::size_t>(n));
   welvet::TensorF32 pre_t, post_t;
   st = welvet::kmeans::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_parallel_forward_f32(int32_t batch, int32_t seq, int32_t dim, int32_t out_feat,
+                                          int32_t branches, int32_t combine, int32_t sparse_k,
+                                          int32_t dtype, int32_t /*backend*/, double disagree_beta,
+                                          const float* packed, const float* x, float* pre,
+                                          float* post) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || out_feat <= 0 || branches <= 0 || !packed || !x ||
+      !pre || !post) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "parallel: invalid argument");
+    return st;
+  }
+  if (combine < 0 || combine > 6) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "parallel: bad combine");
+    return st;
+  }
+  welvet::parallel::Config cfg;
+  cfg.dim = dim;
+  cfg.out_feat = out_feat;
+  cfg.branches = branches;
+  cfg.combine = static_cast<welvet::parallel::Combine>(combine);
+  cfg.seq_len = seq == 1 ? 0 : seq;
+  cfg.sparse_k = sparse_k;
+  cfg.disagree_beta = disagree_beta;
+  welvet::parallel::Layer layer;
+  auto st =
+      welvet::parallel::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::parallel::forward(layer, input, &pre_t, &post_t);
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
