@@ -292,6 +292,71 @@ static int run_embedding(int bench_iters) {
   return 0;
 }
 
+static int run_sequential(int bench_iters) {
+  int32_t batch = 0, seq = 0, dim = 0, depth = 0, child_act = -1, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&seq, 1) || !read_exact(&dim, 1) ||
+      !read_exact(&depth, 1) || !read_exact(&child_act, 1) || !read_exact(&dtype, 1) ||
+      !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WSQ1 header\n");
+    return 2;
+  }
+  if (batch <= 0 || seq <= 0 || dim <= 0 || depth <= 0) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad sequential dims\n");
+    return 2;
+  }
+  const int wn = depth * dim * dim;
+  std::vector<float> packed(static_cast<std::size_t>(wn));
+  if (!read_exact(packed.data(), packed.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * seq * dim));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(x.size());
+  std::vector<float> post(x.size());
+
+  auto once = [&]() -> welvet_status {
+    return welvet_sequential_forward_f32(batch, seq, dim, depth, child_act, dtype, backend,
+                                         packed.data(), x.data(), pre.data(), post.data());
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    welvet_status st = once();
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+      return 1;
+    }
+  }
+
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WSQO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
 static int run_softmax(int bench_iters) {
   int32_t n = 0, dim = 0, seq = 0, kind = 0, rows = 0, cols = 0, gumbel_seed = 0, dtype = 1,
           backend = 0, rank = 0, mask_len = 0, hier_len = 0;
@@ -589,7 +654,7 @@ static void usage() {
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
-               "WEM1→WEMO\n");
+               "WEM1→WEMO | WSQ1→WSQO\n");
 }
 
 int main(int argc, char** argv) {
@@ -649,6 +714,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WEM1", 4) == 0) {
     return run_embedding(bench_iters);
+  }
+  if (std::memcmp(magic, "WSQ1", 4) == 0) {
+    return run_sequential(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

@@ -6,6 +6,7 @@
 #include "welvet/metal/matvec.hpp"
 #include "welvet/mha.hpp"
 #include "welvet/embedding.hpp"
+#include "welvet/sequential.hpp"
 #include "welvet/layernorm.hpp"
 #include "welvet/rmsnorm.hpp"
 #include "welvet/softmax.hpp"
@@ -327,6 +328,40 @@ welvet_status welvet_embedding_forward_f32(int32_t batch, int32_t vocab, int32_t
   input.data.assign(x, x + static_cast<std::size_t>(batch * seq_len * in_last));
   welvet::TensorF32 pre_t, post_t;
   st = welvet::embedding::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_sequential_forward_f32(int32_t batch, int32_t seq, int32_t dim, int32_t depth,
+                                            int32_t child_act, int32_t dtype, int32_t /*backend*/,
+                                            const float* packed, const float* x, float* pre,
+                                            float* post) {
+  if (batch <= 0 || seq <= 0 || dim <= 0 || depth <= 0 || !packed || !x || !pre || !post) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "sequential: invalid argument");
+    return st;
+  }
+  welvet::sequential::Config cfg;
+  cfg.dim = dim;
+  cfg.seq_len = seq;
+  cfg.depth = depth;
+  welvet::sequential::Layer layer;
+  auto st = welvet::sequential::new_configured(cfg, static_cast<welvet::DType>(dtype),
+                                               static_cast<welvet::Activation>(child_act), packed,
+                                               &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, dim};
+  } else {
+    input.shape = {batch, seq, dim};
+  }
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::sequential::forward(layer, input, &pre_t, &post_t);
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
