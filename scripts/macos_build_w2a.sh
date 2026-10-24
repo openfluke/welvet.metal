@@ -14,9 +14,11 @@ fi
 
 cd "$W2A"
 echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
-# Default: Dense. Pass MHA=1 for MHA-only: MHA=1 ./scripts/macos_build_w2a.sh
-if [[ "${MHA:-0}" == "1" ]]; then
-  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalMHA$' -timeout 30m
+# Default: Dense. MHA=1 or SWIGLU=1 for layer-only suites.
+if [[ "${SWIGLU:-0}" == "1" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalSwiGLU$' -timeout 45m
+elif [[ "${MHA:-0}" == "1" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalMHA$' -timeout 45m
 else
   go test ./tests/go_v_metal -v -count=1 -run TestGoVMetalDenseForward -timeout 45m
 fi

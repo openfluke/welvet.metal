@@ -58,6 +58,12 @@ WELVET_API welvet_status welvet_mha_forward_f32(
     const float* Q, const float* K, const float* V, const float* O, const float* x, float* pre,
     float* post);
 
+/* SwiGLU forward — WVS1 wire. Gate/Up/Down Dense on Metal; SiLU⊙ host f64 (Go/cpp baseline). */
+WELVET_API welvet_status welvet_swiglu_forward_f32(
+    int32_t batch, int32_t seq, int32_t input_dim, int32_t intermediate_dim, int32_t dtype,
+    int32_t backend, const float* Gate, const float* Up, const float* Down, const float* x,
+    float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif
