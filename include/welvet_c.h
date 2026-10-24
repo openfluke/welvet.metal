@@ -140,6 +140,16 @@ WELVET_API welvet_status welvet_convt3_forward_f32(
     int32_t kernel, int32_t stride, int32_t padding, int32_t output_padding, int32_t act,
     int32_t dtype, int32_t backend, const float* W, const float* x, float* pre, float* post);
 
+/* RNN — WRN1 wire. packed [IH|HH|bias]; Dense soft-double + host f64 tanh. */
+WELVET_API welvet_status welvet_rnn_forward_f32(
+    int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, float* pre, float* post);
+
+/* LSTM — WLS1 wire. packed 4×[IH|HH|bias]; Dense soft-double + host f64 gates. */
+WELVET_API welvet_status welvet_lstm_forward_f32(
+    int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif

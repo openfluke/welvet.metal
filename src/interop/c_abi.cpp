@@ -11,6 +11,8 @@
 #include "welvet/convt1.hpp"
 #include "welvet/convt2.hpp"
 #include "welvet/convt3.hpp"
+#include "welvet/lstm.hpp"
+#include "welvet/rnn.hpp"
 #include "welvet/embedding.hpp"
 #include "welvet/residual.hpp"
 #include "welvet/seqmix.hpp"
@@ -654,6 +656,62 @@ welvet_status welvet_convt3_forward_f32(int32_t batch, int32_t in_c, int32_t fil
   input.data.assign(x, x + static_cast<std::size_t>(batch * in_c * depth * height * width));
   welvet::TensorF32 pre_t, post_t;
   st = welvet::convt3::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_rnn_forward_f32(int32_t batch, int32_t input_size, int32_t hidden_size,
+                                     int32_t seq_len, int32_t dtype, int32_t /*backend*/,
+                                     const float* packed, const float* x, float* pre, float* post) {
+  if (batch <= 0 || input_size <= 0 || hidden_size <= 0 || seq_len <= 0 || !packed || !x || !pre ||
+      !post) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "rnn: invalid argument");
+    return st;
+  }
+  welvet::rnn::Config cfg;
+  cfg.input_size = input_size;
+  cfg.hidden_size = hidden_size;
+  cfg.seq_len = seq_len;
+  welvet::rnn::Layer layer;
+  auto st = welvet::rnn::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape = {batch, seq_len, input_size};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq_len * input_size));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::rnn::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_lstm_forward_f32(int32_t batch, int32_t input_size, int32_t hidden_size,
+                                      int32_t seq_len, int32_t dtype, int32_t /*backend*/,
+                                      const float* packed, const float* x, float* pre, float* post) {
+  if (batch <= 0 || input_size <= 0 || hidden_size <= 0 || seq_len <= 0 || !packed || !x || !pre ||
+      !post) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "lstm: invalid argument");
+    return st;
+  }
+  welvet::lstm::Config cfg;
+  cfg.input_size = input_size;
+  cfg.hidden_size = hidden_size;
+  cfg.seq_len = seq_len;
+  welvet::lstm::Layer layer;
+  auto st = welvet::lstm::new_configured(cfg, static_cast<welvet::DType>(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape = {batch, seq_len, input_size};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq_len * input_size));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::lstm::forward(layer, input, &pre_t, &post_t);
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));

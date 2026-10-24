@@ -870,6 +870,71 @@ static int write_convt_out(const std::vector<float>& pre, const std::vector<floa
   return 0;
 }
 
+static int write_rnn_out(const std::vector<float>& pre, const std::vector<float>& post) {
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WRNO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
+static int write_lstm_out(const std::vector<float>& pre, const std::vector<float>& post) {
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WLSO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
+static int run_rnn(int bench_iters) {
+  int32_t batch = 0, input_size = 0, hidden_size = 0, seq_len = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&input_size, 1) || !read_exact(&hidden_size, 1) ||
+      !read_exact(&seq_len, 1) || !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WRN1 header\n");
+    return 2;
+  }
+  const int wn = hidden_size * input_size + hidden_size * hidden_size + hidden_size;
+  std::vector<float> packed(static_cast<std::size_t>(wn));
+  if (!read_exact(packed.data(), packed.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * seq_len * input_size));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(static_cast<std::size_t>(batch * seq_len * hidden_size));
+  std::vector<float> post(pre.size());
+  auto once = [&]() -> welvet_status {
+    return welvet_rnn_forward_f32(batch, input_size, hidden_size, seq_len, dtype, backend,
+                                  packed.data(), x.data(), pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_rnn_out(pre, post);
+}
+
+static int run_lstm(int bench_iters) {
+  int32_t batch = 0, input_size = 0, hidden_size = 0, seq_len = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&input_size, 1) || !read_exact(&hidden_size, 1) ||
+      !read_exact(&seq_len, 1) || !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WLS1 header\n");
+    return 2;
+  }
+  const int gate = hidden_size * input_size + hidden_size * hidden_size + hidden_size;
+  const int wn = 4 * gate;
+  std::vector<float> packed(static_cast<std::size_t>(wn));
+  if (!read_exact(packed.data(), packed.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * seq_len * input_size));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(static_cast<std::size_t>(batch * seq_len * 5 * hidden_size));
+  std::vector<float> post(static_cast<std::size_t>(batch * seq_len * hidden_size));
+  auto once = [&]() -> welvet_status {
+    return welvet_lstm_forward_f32(batch, input_size, hidden_size, seq_len, dtype, backend,
+                                   packed.data(), x.data(), pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_lstm_out(pre, post);
+}
+
 static int run_convt1(int bench_iters) {
   int32_t batch = 0, in_c = 0, filters = 0, seq = 0, kernel = 0, stride = 0, padding = 0,
           out_pad = 0, act = 0, dtype = 1, backend = 0;
@@ -991,7 +1056,8 @@ static void usage() {
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
-               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO | WVC1/2/3→WVCO | WVT1/2/3→WVTO\n");
+               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO | WVC1/2/3→WVCO | WVT1/2/3→WVTO | "
+               "WRN1→WRNO | WLS1→WLSO\n");
 }
 
 int main(int argc, char** argv) {
@@ -1078,6 +1144,12 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WVT3", 4) == 0) {
     return run_convt3(bench_iters);
+  }
+  if (std::memcmp(magic, "WRN1", 4) == 0) {
+    return run_rnn(bench_iters);
+  }
+  if (std::memcmp(magic, "WLS1", 4) == 0) {
+    return run_lstm(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;
