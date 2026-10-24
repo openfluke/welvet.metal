@@ -179,6 +179,12 @@ WELVET_API welvet_status welvet_parallel_forward_f32(
     int32_t sparse_k, int32_t dtype, int32_t backend, double disagree_beta, const float* packed,
     const float* x, float* pre, float* post);
 
+/* Metacognition — WMC1 wire. Observed Dense soft-double Dim×Dim FormatNone×34 + host rules.
+ * packed: Observed [Dim×Dim]. DefaultStabilityRules when empty. */
+WELVET_API welvet_status welvet_metacognition_forward_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t dtype, int32_t backend, const float* packed,
+    const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif

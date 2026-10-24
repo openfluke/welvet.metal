@@ -1031,6 +1031,38 @@ static int write_pl_out(const std::vector<float>& pre, const std::vector<float>&
   return 0;
 }
 
+static int write_mc_out(const std::vector<float>& pre, const std::vector<float>& post) {
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WMCO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
+static int run_metacognition(int bench_iters) {
+  int32_t batch = 0, seq = 0, dim = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&seq, 1) || !read_exact(&dim, 1) ||
+      !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WMC1 header\n");
+    return 2;
+  }
+  const int wn = dim * dim;
+  std::vector<float> packed(static_cast<std::size_t>(wn));
+  if (!read_exact(packed.data(), packed.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * seq * dim));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(x.size());
+  std::vector<float> post(x.size());
+  auto once = [&]() -> welvet_status {
+    return welvet_metacognition_forward_f32(batch, seq, dim, dtype, backend, packed.data(),
+                                            x.data(), pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_mc_out(pre, post);
+}
+
 static int run_parallel(int bench_iters) {
   int32_t batch = 0, seq = 0, dim = 0, out_feat = 0, branches = 0, combine = 0, sparse_k = 0;
   int32_t dtype = 1, backend = 0;
@@ -1218,7 +1250,8 @@ static void usage() {
                "  --bench=N\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
                "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO | WVC1/2/3→WVCO | WVT1/2/3→WVTO | "
-               "WRN1→WRNO | WLS1→WLSO | WGD1→WGDO | WMB1→WMBO | WKM1→WKMO | WPL1→WPLO\n");
+               "WRN1→WRNO | WLS1→WLSO | WGD1→WGDO | WMB1→WMBO | WKM1→WKMO | WPL1→WPLO | "
+               "WMC1→WMCO\n");
 }
 
 int main(int argc, char** argv) {
@@ -1323,6 +1356,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WPL1", 4) == 0) {
     return run_parallel(bench_iters);
+  }
+  if (std::memcmp(magic, "WMC1", 4) == 0) {
+    return run_metacognition(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

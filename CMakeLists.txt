@@ -62,6 +62,7 @@ set(WELVET_CORE_SOURCES
   src/layers/mamba/mamba.cpp
   src/layers/kmeans/kmeans.cpp
   src/layers/parallel/parallel.cpp
+  src/layers/metacognition/metacognition.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp
