@@ -163,6 +163,13 @@ WELVET_API welvet_status welvet_mamba_forward_f32(
     int32_t batch, int32_t seq, int32_t d_model, int32_t d_state, int32_t expand, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* KMeans soft assignment — WKM1 wire. Centers FormatNone×34 decode_row_f64 + host f64 softMax.
+ * output_mode: 0=probabilities (K), 1=features (D). */
+WELVET_API welvet_status welvet_kmeans_forward_f32(
+    int32_t n, int32_t feature_dim, int32_t num_clusters, int32_t output_mode, int32_t act,
+    double temperature, int32_t dtype, int32_t backend, int32_t rank, const int32_t* shape,
+    const float* W, const float* x, float* pre, float* post);
+
 #ifdef __cplusplus
 }
 #endif

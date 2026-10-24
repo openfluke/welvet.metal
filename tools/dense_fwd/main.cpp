@@ -1011,6 +1011,50 @@ static int run_mamba(int bench_iters) {
   return write_mamba_out(pre, post);
 }
 
+static int write_kmeans_out(const std::vector<float>& pre, const std::vector<float>& post) {
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WKMO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
+static int run_kmeans(int bench_iters) {
+  int32_t n = 0, feature_dim = 0, num_clusters = 0, output_mode = 0, act = -1, dtype = 1,
+          backend = 0, rank = 0;
+  double temperature = 1.0;
+  if (!read_exact(&n, 1) || !read_exact(&feature_dim, 1) || !read_exact(&num_clusters, 1) ||
+      !read_exact(&output_mode, 1) || !read_exact(&act, 1) || !read_exact(&temperature, 1) ||
+      !read_exact(&dtype, 1) || !read_exact(&backend, 1) || !read_exact(&rank, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WKM1 header\n");
+    return 2;
+  }
+  if (rank < 1 || rank > 8) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad kmeans rank\n");
+    return 2;
+  }
+  std::vector<int32_t> shape(static_cast<std::size_t>(rank));
+  if (!read_exact(shape.data(), shape.size())) return 2;
+  std::vector<float> W(static_cast<std::size_t>(num_clusters * feature_dim));
+  if (!read_exact(W.data(), W.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(n));
+  if (!read_exact(x.data(), x.size())) return 2;
+  int batch = 1;
+  for (int i = 0; i < rank - 1; ++i) batch *= shape[static_cast<std::size_t>(i)];
+  const int out_dim = output_mode == 1 ? feature_dim : num_clusters;
+  std::vector<float> pre(static_cast<std::size_t>(batch * out_dim));
+  std::vector<float> post(pre.size());
+  auto once = [&]() -> welvet_status {
+    return welvet_kmeans_forward_f32(n, feature_dim, num_clusters, output_mode, act, temperature,
+                                     dtype, backend, rank, shape.data(), W.data(), x.data(),
+                                     pre.data(), post.data());
+  };
+  if (int rc = bench_or_once_cnn(bench_iters, once, pre, post); rc != 0) return rc;
+  return write_kmeans_out(pre, post);
+}
+
 static int run_convt1(int bench_iters) {
   int32_t batch = 0, in_c = 0, filters = 0, seq = 0, kernel = 0, stride = 0, padding = 0,
           out_pad = 0, act = 0, dtype = 1, backend = 0;
@@ -1133,7 +1177,7 @@ static void usage() {
                "  --bench=N\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
                "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO | WVC1/2/3→WVCO | WVT1/2/3→WVTO | "
-               "WRN1→WRNO | WLS1→WLSO | WGD1→WGDO | WMB1→WMBO\n");
+               "WRN1→WRNO | WLS1→WLSO | WGD1→WGDO | WMB1→WMBO | WKM1→WKMO\n");
 }
 
 int main(int argc, char** argv) {
@@ -1232,6 +1276,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WMB1", 4) == 0) {
     return run_mamba(bench_iters);
+  }
+  if (std::memcmp(magic, "WKM1", 4) == 0) {
+    return run_kmeans(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

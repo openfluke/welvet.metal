@@ -60,6 +60,7 @@ set(WELVET_CORE_SOURCES
   src/layers/lstm/lstm.cpp
   src/layers/gdn/gdn.cpp
   src/layers/mamba/mamba.cpp
+  src/layers/kmeans/kmeans.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp

@@ -12,6 +12,7 @@
 #include "welvet/convt2.hpp"
 #include "welvet/convt3.hpp"
 #include "welvet/gdn.hpp"
+#include "welvet/kmeans.hpp"
 #include "welvet/lstm.hpp"
 #include "welvet/mamba.hpp"
 #include "welvet/rnn.hpp"
@@ -775,6 +776,38 @@ welvet_status welvet_mamba_forward_f32(int32_t batch, int32_t seq, int32_t d_mod
   input.data.assign(x, x + static_cast<std::size_t>(batch * seq * d_model));
   welvet::TensorF32 pre_t, post_t;
   st = welvet::mamba::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_kmeans_forward_f32(int32_t n, int32_t feature_dim, int32_t num_clusters,
+                                        int32_t output_mode, int32_t act, double temperature,
+                                        int32_t dtype, int32_t /*backend*/, int32_t rank,
+                                        const int32_t* shape, const float* W, const float* x,
+                                        float* pre, float* post) {
+  if (n <= 0 || feature_dim <= 0 || num_clusters <= 0 || !W || !x || !pre || !post || rank < 1 ||
+      !shape) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "kmeans: invalid argument");
+    return st;
+  }
+  welvet::kmeans::Config cfg;
+  cfg.feature_dim = feature_dim;
+  cfg.num_clusters = num_clusters;
+  cfg.temperature = temperature;
+  cfg.output_mode = static_cast<welvet::kmeans::OutputMode>(output_mode);
+  cfg.activation = static_cast<welvet::Activation>(act);
+  welvet::kmeans::Layer layer;
+  auto st = welvet::kmeans::new_configured(cfg, static_cast<welvet::DType>(dtype), W, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape.assign(shape, shape + rank);
+  input.data.assign(x, x + static_cast<std::size_t>(n));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::kmeans::forward(layer, input, &pre_t, &post_t);
   if (!st) return to_c(st);
   std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
   std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
