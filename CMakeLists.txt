@@ -46,6 +46,7 @@ set(WELVET_CORE_SOURCES
   src/layers/swiglu/swiglu.cpp
   src/layers/rmsnorm/rmsnorm.cpp
   src/layers/layernorm/layernorm.cpp
+  src/layers/softmax/softmax.cpp
   src/architecture/grid.cpp
   src/runtime/forward.cpp
   src/runtime/backward.cpp

@@ -225,6 +225,81 @@ static int run_mha(int bench_iters) {
   return 0;
 }
 
+static int run_softmax(int bench_iters) {
+  int32_t n = 0, dim = 0, seq = 0, kind = 0, rows = 0, cols = 0, gumbel_seed = 0, dtype = 1,
+          backend = 0, rank = 0, mask_len = 0, hier_len = 0;
+  double temperature = 1.0, entmax_alpha = 0.0;
+  if (!read_exact(&n, 1) || !read_exact(&dim, 1) || !read_exact(&seq, 1) || !read_exact(&kind, 1) ||
+      !read_exact(&rows, 1) || !read_exact(&cols, 1) || !read_exact(&temperature, 1) ||
+      !read_exact(&entmax_alpha, 1) || !read_exact(&gumbel_seed, 1) || !read_exact(&dtype, 1) ||
+      !read_exact(&backend, 1) || !read_exact(&rank, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short WSM1 header\n");
+    return 2;
+  }
+  if (rank < 1 || rank > 8) {
+    std::fprintf(stderr, "welvet_dense_fwd: bad softmax rank\n");
+    return 2;
+  }
+  std::vector<int32_t> shape(static_cast<std::size_t>(rank));
+  if (!read_exact(shape.data(), shape.size())) return 2;
+  if (!read_exact(&mask_len, 1)) return 2;
+  std::vector<uint8_t> mask(static_cast<std::size_t>(mask_len > 0 ? mask_len : 0));
+  if (mask_len > 0 && !read_exact(mask.data(), mask.size())) return 2;
+  if (!read_exact(&hier_len, 1)) return 2;
+  std::vector<int32_t> hier(static_cast<std::size_t>(hier_len > 0 ? hier_len : 0));
+  if (hier_len > 0 && !read_exact(hier.data(), hier.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(n));
+  if (!read_exact(x.data(), x.size())) return 2;
+  std::vector<float> pre(static_cast<std::size_t>(n));
+  std::vector<float> post(pre.size());
+
+  auto once = [&]() -> welvet_status {
+    return welvet_softmax_forward_f32(
+        n, dim, seq, kind, rows, cols, temperature, entmax_alpha, gumbel_seed, dtype, backend, rank,
+        shape.data(), mask_len > 0 ? mask.data() : nullptr, mask_len,
+        hier_len > 0 ? hier.data() : nullptr, hier_len, x.data(), pre.data(), post.data());
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      welvet_status st = once();
+      if (st.code != 0) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) {
+      return 2;
+    }
+  } else {
+    welvet_status st = once();
+    if (st.code != 0) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message);
+      return 1;
+    }
+  }
+
+  const int32_t pre_n = static_cast<int32_t>(pre.size());
+  const int32_t post_n = static_cast<int32_t>(post.size());
+  if (!write_exact("WSMO", 4) || !write_exact(&pre_n, 1) || !write_exact(pre.data(), pre.size()) ||
+      !write_exact(&post_n, 1) || !write_exact(post.data(), post.size())) {
+    return 2;
+  }
+  return 0;
+}
+
 static int run_layernorm(int bench_iters) {
   int32_t batch = 0, seq = 0, dim = 0, dtype = 1, backend = 0;
   double eps = 0.0;
@@ -446,7 +521,7 @@ static void usage() {
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N\n"
-               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO\n");
+               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO\n");
 }
 
 int main(int argc, char** argv) {
@@ -500,6 +575,9 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WVL1", 4) == 0) {
     return run_layernorm(bench_iters);
+  }
+  if (std::memcmp(magic, "WSM1", 4) == 0) {
+    return run_softmax(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

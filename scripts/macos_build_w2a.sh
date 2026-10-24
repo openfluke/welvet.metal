@@ -14,8 +14,10 @@ fi
 
 cd "$W2A"
 echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
-# Default: Dense. MHA=1 / SWIGLU=1 / RMSNORM=1 / LAYERNORM=1 for layer-only suites.
-if [[ "${LAYERNORM:-0}" == "1" ]]; then
+# Default: Dense. Layer-only: MHA / SWIGLU / RMSNORM / LAYERNORM / SOFTMAX.
+if [[ "${SOFTMAX:-0}" == "1" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalSoftmax$' -timeout 45m
+elif [[ "${LAYERNORM:-0}" == "1" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalLayerNorm$' -timeout 45m
 elif [[ "${RMSNORM:-0}" == "1" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalRMSNorm$' -timeout 45m
