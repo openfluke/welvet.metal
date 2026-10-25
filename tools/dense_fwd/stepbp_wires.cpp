@@ -8,6 +8,7 @@
 #include "welvet/layer.hpp"
 #include "welvet/runtime/line.hpp"
 #include "welvet/runtime/tween_train.hpp"
+#include "welvet/runtime/tween_chain_train.hpp"
 #include "welvet/runtime/step.hpp"
 #include "welvet/stack.hpp"
 #include "welvet/cnn1.hpp"
@@ -885,12 +886,13 @@ int run_stepbp(int bench_iters) {
   return 0;
 }
 
-int run_tween_leaf(int bench_iters) {
+int run_tween_leaf(int bench_iters, bool chain) {
+  const char* request = chain ? "TCB1" : "TWB1";
   int32_t n_children = 0, n_ticks = 0, batch = 0;
   double lr = 0.0;
   if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
       !read_exact(&lr, 1)) {
-    std::fprintf(stderr, "welvet_dense_fwd: short TWB1 header\n");
+    std::fprintf(stderr, "welvet_dense_fwd: short %s header\n", request);
     return 2;
   }
   if (n_children <= 0 || n_ticks <= 0 || batch <= 0) return 1;
@@ -902,7 +904,7 @@ int run_tween_leaf(int bench_iters) {
   stack.children.resize(static_cast<std::size_t>(n_children));
   for (int32_t i = 0; i < n_children; ++i) {
     if (!read_child(initial, &stack.children[static_cast<std::size_t>(i)])) {
-      std::fprintf(stderr, "welvet_dense_fwd: bad TWB1 child %d\n", i);
+      std::fprintf(stderr, "welvet_dense_fwd: bad %s child %d\n", request, i);
       return 2;
     }
   }
@@ -917,7 +919,7 @@ int run_tween_leaf(int bench_iters) {
   const int x_len = prod_shape(x_shape);
   const int t_len = prod_shape(t_shape);
 
-  // Use first tick only (ModeTween is full-chain, not Line systolic).
+  // Tween/TweenChain process one complete sample, rather than Line ticks.
   std::vector<float> x(static_cast<std::size_t>(x_len));
   std::vector<float> tgt(static_cast<std::size_t>(t_len));
   if (!read_exact(x.data(), x.size()) || !read_exact(tgt.data(), tgt.size())) return 2;
@@ -941,8 +943,10 @@ int run_tween_leaf(int bench_iters) {
     ChildReader replay(&initial.bytes);
     for (auto& child : stack.children) {
       if (!read_child(replay, &child))
-        return welvet::Status::Err(welvet::StatusCode::Internal, "bad TWB1 replay");
+        return welvet::Status::Err(welvet::StatusCode::Internal, "invalid Tween child replay");
     }
+    if (chain)
+      return welvet::runtime::tween_chain_train::train_stack_mse(stack, xin, target, lr, &loss);
     return welvet::runtime::tween_train::train_stack_mse(stack, xin, target, lr, &loss);
   };
 
@@ -974,7 +978,7 @@ int run_tween_leaf(int bench_iters) {
     }
   }
 
-  if (!write_magic("TWBO") || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
+  if (!write_magic(chain ? "TCBO" : "TWBO") || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
   for (int32_t i = 0; i < n_children; ++i) {
     auto& ch = stack.children[static_cast<std::size_t>(i)];
     const int nw = welvet::stack::child_grad_w_size(ch);

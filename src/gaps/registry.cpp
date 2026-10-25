@@ -138,7 +138,8 @@ const std::vector<Entry> &build() {
       {"train.camsync", "training", "gap? CamSync / BlendStores Metal", false},
 
       // --- Systems / model ---
-      {"systems.tween", "systems", "ModeTween projected local credit on Metal; other Tween modes open", true},
+      {"systems.tween", "systems", "ModeTween projected local credit on Metal", true},
+      {"systems.tween_chain", "systems", "ModeTweenChain full-rate chain-rule BP on Metal", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

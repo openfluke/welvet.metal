@@ -36,7 +36,12 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   original forward inputs during local updates. All 21 supported families have
   leaf/volume evidence, including all supported dtypes (GDN Float32 only).
   GDN leaf updated weights use a ≥strict floor; other Tween leaf weights are
-  exact, with the finite loss band above. Other Tween variants remain unverified.
+  exact, with the finite loss band above. Other Tween variants retain separate gates.
+- TweenChain ModeTweenChain uses Metal chain-rule backward and SGD at full lr.
+  All 21 supported families have leaf/volume evidence, including all supported
+  dtypes (GDN Float32 only). The volume path shares NormalBP credit, with actual
+  input gradients checked through TweenChain wires. GDN leaf updated weights
+  retain ≥strict; GDN volume retains ≥industry. Step/Mesh variants remain open.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
   Promoted reductions and transcendentals use float2 before rounding to Float32.
 
@@ -67,6 +72,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/macos_build_w2a.sh --normalbp-all
 ./scripts/macos_build_w2a.sh --stepbp-train
 ./scripts/macos_build_w2a.sh --tween-train
+./scripts/macos_build_w2a.sh --tweenchain-train
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
@@ -78,9 +84,12 @@ defaults to one measured iteration per fixture. The StepBP runner executes
 `TestGoVMetalStepBPTrain` (84 case groups, with dtype sweeps) and `TestGoVMetalOnly`.
 The Tween runner executes `TestGoVMetalTweenTrain` (80 case groups, including
 leaf/volume dtype sweeps) and `TestGoVMetalOnly`, which also checks projection
-and nested local credit. Line and Tween benchmark iterations reset all
+and nested local credit. The TweenChain runner executes
+`TestGoVMetalTweenChainTrain` (80 case groups with leaf/volume dtype sweeps) plus
+`TestGoVMetalOnly`, including hand-calculated chain-rule/full-rate checks.
+Line, Tween and TweenChain benchmark iterations reset all
 weights/configuration before each run and
-return the real final loss; reset cost is included. All three runners default to one
+return the real final loss; reset cost is included. All runners default to one
 measured iteration; set
 `WELVET_METAL_BENCH_ITERS=2000` for longer timing runs.
 
