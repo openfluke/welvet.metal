@@ -284,4 +284,68 @@ Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, Tenso
   return Status::Ok();
 }
 
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& /*input*/,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "softmax: nil grad_in/grad_w");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg, pre, &lay); !st) {
+    if (auto st2 = parse_layout(cfg, grad_out, &lay); !st2) return st2;
+  }
+  if (grad_out.data.size() < static_cast<std::size_t>(lay.n) ||
+      pre.data.size() < static_cast<std::size_t>(lay.n)) {
+    return Status::Err(StatusCode::InvalidArgument, "softmax: nil/short gradOut/pre");
+  }
+
+  const double inv_t = 1.0 / lay.temp;
+  std::vector<float> dx(static_cast<std::size_t>(lay.n), 0.0f);
+
+  for (int r = 0; r < lay.rows; ++r) {
+    int start = r * lay.cols;
+    int end = start + lay.cols;
+    if (end > lay.n) end = lay.n;
+    const int cols = end - start;
+    std::vector<float> probs(static_cast<std::size_t>(cols));
+    std::vector<float> grads(static_cast<std::size_t>(cols));
+    for (int i = 0; i < cols; ++i) {
+      probs[static_cast<std::size_t>(i)] = pre.data[static_cast<std::size_t>(start + i)];
+      grads[static_cast<std::size_t>(i)] = grad_out.data[static_cast<std::size_t>(start + i)];
+    }
+    if (cfg.kind == Kind::Masked) {
+      for (int i = 0; i < cols; ++i) {
+        const int gi = start + i;
+        if (gi < static_cast<int>(cfg.mask.size()) && !cfg.mask[static_cast<std::size_t>(gi)]) {
+          grads[static_cast<std::size_t>(i)] = 0.0f;
+        }
+      }
+    }
+    float dot = 0.0f;
+    for (int i = 0; i < cols; ++i) {
+      dot += grads[static_cast<std::size_t>(i)] * probs[static_cast<std::size_t>(i)];
+    }
+    for (int j = 0; j < cols; ++j) {
+      const float gl =
+          probs[static_cast<std::size_t>(j)] * (grads[static_cast<std::size_t>(j)] - dot);
+      dx[static_cast<std::size_t>(start + j)] = static_cast<float>(static_cast<double>(gl) * inv_t);
+    }
+  }
+
+  grad_in->shape = lay.shape;
+  grad_in->data = std::move(dx);
+  grad_w->shape.clear();
+  grad_w->data.clear();
+  return Status::Ok();
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& /*dW*/, double /*lr*/) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "softmax: ApplyGradSGD nil layer");
+  }
+  return Status::Ok();
+}
+
 } // namespace welvet::softmax

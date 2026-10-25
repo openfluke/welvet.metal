@@ -22,8 +22,9 @@ for arg in "$@"; do
     --rmsnorm-train) MODE="rmsnorm_train" ;;
     --layernorm-train) MODE="layernorm_train" ;;
     --swiglu-train) MODE="swiglu_train" ;;
+    --softmax-train) MODE="softmax_train" ;;
     --help|-h)
-      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train|--swiglu-train]"
+      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train|--swiglu-train|--softmax-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
@@ -44,6 +45,10 @@ if [[ "$MODE" == "layernorm_train" ]]; then
 fi
 if [[ "$MODE" == "swiglu_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalSwiGLUTrain$' -timeout 60m
+  exit 0
+fi
+if [[ "$MODE" == "softmax_train" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalSoftmaxTrain$' -timeout 60m
   exit 0
 fi
 

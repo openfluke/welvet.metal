@@ -47,4 +47,12 @@ Status new_configured(const Config& cfg, DType dt, Layer* out);
 // Host f64 temperature + f32 stable Softmax/sparsemax/entmax (Go/cpp exact_bit).
 Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// dx = (y/T) ⊙ (dy − ⟨dy,y⟩); Masked zeros dy on masked positions. gradW always empty.
+// pre must be probabilities from forward.
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+// Weightless no-op. Accepts empty/nil dW.
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 } // namespace welvet::softmax

@@ -39,3 +39,7 @@ int run_volume_layernorm_normalbp(int bench_iters);   // WLV1 → WLVO (+ option
 // SwiGLU NormalBP (training)
 int run_swiglu_normalbp(int bench_iters);             // WSB1 → WSBO (+ optional WVB1)
 int run_volume_swiglu_normalbp(int bench_iters);      // WSV1 → WSVO (+ optional WVB1)
+
+// Softmax NormalBP (training)
+int run_softmax_normalbp(int bench_iters);            // WXB1 → WXBO (+ optional WVB1)
+int run_volume_softmax_normalbp(int bench_iters);     // WXV1 → WXVO (+ optional WVB1)

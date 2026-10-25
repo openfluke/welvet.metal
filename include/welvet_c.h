@@ -121,6 +121,17 @@ WELVET_API welvet_status welvet_softmax_forward_f32(
     int32_t rank, const int32_t* shape, const uint8_t* mask, int32_t mask_len, const int32_t* hier,
     int32_t hier_len, const float* x, float* pre, float* post);
 
+/* Softmax NormalBP leaf (weightless dX): forward → (MSEGrad | grad_out) → backward → optional SGD.
+ * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE). lr applied as no-op SGD.
+ * Outputs: pre/post/dX [n], *loss. dW always empty.
+ */
+WELVET_API welvet_status welvet_softmax_normalbp_f32(
+    int32_t n, int32_t dim, int32_t seq_len, int32_t kind, int32_t rows, int32_t cols,
+    double temperature, double entmax_alpha, int32_t gumbel_seed, int32_t dtype, int32_t backend,
+    int32_t rank, const int32_t* shape, const uint8_t* mask, int32_t mask_len, const int32_t* hier,
+    int32_t hier_len, const float* x, const float* grad_or_target, int32_t use_target, double lr,
+    float* pre, float* post, float* dX, double* loss);
+
 /* Embedding gather — WEM1 wire. Vocab×Emb FormatNone×34 decode_row_f64 (Go/cpp exact_bit). */
 WELVET_API welvet_status welvet_embedding_forward_f32(
     int32_t batch, int32_t vocab, int32_t emb, int32_t seq_len, int32_t in_rank, int32_t in_last,
