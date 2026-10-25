@@ -1,6 +1,7 @@
 #include "welvet/runtime/training.hpp"
 
 #include "welvet/dense.hpp"
+#include "welvet/rmsnorm.hpp"
 
 #include <map>
 #include <utility>
@@ -64,10 +65,18 @@ Status sgd_dense(architecture::Grid& g, const forward::Result& fwd, const backwa
     if (!cell) {
       return Status::Err(StatusCode::InvalidArgument, "training: SGD missing cell");
     }
-    if (cell->op_kind != architecture::OpKind::Dense) {
-      return Status::Gap("training: SGD cell Op not yet on Metal (Dense NormalBP first)");
+    Status st_a = Status::Ok();
+    switch (cell->op_kind) {
+    case architecture::OpKind::Dense:
+      st_a = dense::apply_grad_sgd(&cell->dense_op, *it->second, lr);
+      break;
+    case architecture::OpKind::RMSNorm:
+      st_a = rmsnorm::apply_grad_sgd(&cell->rmsnorm_op, *it->second, lr);
+      break;
+    default:
+      return Status::Gap("training: SGD cell Op not yet on Metal (Dense/RMSNorm NormalBP first)");
     }
-    if (auto st_a = dense::apply_grad_sgd(&cell->dense_op, *it->second, lr); !st_a) {
+    if (!st_a) {
       return st_a;
     }
   }

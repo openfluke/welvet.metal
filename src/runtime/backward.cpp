@@ -1,6 +1,7 @@
 #include "welvet/runtime/backward.hpp"
 
 #include "welvet/dense.hpp"
+#include "welvet/rmsnorm.hpp"
 
 #include <sstream>
 #include <utility>
@@ -15,8 +16,10 @@ Status cell(architecture::Cell& cell, const TensorF32& grad_out, const TensorF32
   switch (cell.op_kind) {
   case architecture::OpKind::Dense:
     return dense::backward_f32(cell.dense_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::RMSNorm:
+    return rmsnorm::backward_f32(cell.rmsnorm_op, grad_out, input, pre, grad_in, dW);
   default:
-    return Status::Gap("runtime.backward: cell Op not yet on Metal (Dense NormalBP first)");
+    return Status::Gap("runtime.backward: cell Op not yet on Metal (Dense/RMSNorm NormalBP first)");
   }
 }
 
