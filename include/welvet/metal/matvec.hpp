@@ -46,6 +46,11 @@ Status resident_reload_w(ResidentDense* r, const float* W_xy, const float* bias_
 // Upload x, run matvec+bias_act in one command buffer, download pre/post.
 Status resident_execute(ResidentDense* r, const float* x, float* pre, float* post);
 
+// GPU NormalBP: act′ → MatVecT (soft-double W) → outer. Downloads grad_in + grad_w.
+// Requires resident mount (same W as forward). pre = post-bias pre-act from forward.
+Status resident_backward(ResidentDense* r, const float* grad_out, const float* input,
+                         const float* pre, float* grad_in, float* grad_w);
+
 void resident_release(ResidentDense* r);
 
 } // namespace welvet::metal

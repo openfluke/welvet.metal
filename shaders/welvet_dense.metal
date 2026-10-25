@@ -108,3 +108,84 @@ kernel void welvet_dense_bias_act(
   }
   post[gid] = y;
 }
+
+// d_pre = gy * act'(pre)  — pre is post-bias / pre-act (same buffer as forward `pre`).
+kernel void welvet_dense_act_deriv(
+    device const float* gy [[buffer(0)]],
+    device const float* pre [[buffer(1)]],
+    device float* d_pre [[buffer(2)]],
+    constant uint& out_dim [[buffer(3)]],
+    constant uint& batch [[buffer(4)]],
+    constant int& act [[buffer(5)]],
+    uint gid [[thread_position_in_grid]]) {
+  const uint total = batch * out_dim;
+  if (gid >= total) return;
+  const float vf = pre[gid];
+  float d = 1.0f;
+  if (act == 0) { // ReLU
+    d = vf > 0.0f ? 1.0f : 0.0f;
+  } else if (act == 6) { // ReLU2
+    d = vf > 0.0f ? 2.0f * vf : 0.0f;
+  } else if (act == 5) { // LeakyReLU
+    d = vf > 0.0f ? 1.0f : 0.01f;
+  } else if (act == 1) { // Silu
+    const float sig = 1.0f / (1.0f + exp(-vf));
+    d = sig * (1.0f + vf * (1.0f - sig));
+  } else if (act == 2) { // GELU
+    constexpr float k = 0.7978845608028654f;
+    const float u = k * (vf + 0.044715f * vf * vf * vf);
+    const float th = tanh(u);
+    const float du = k * (1.0f + 3.0f * 0.044715f * vf * vf);
+    d = 0.5f * (1.0f + th) + 0.5f * vf * (1.0f - th * th) * du;
+  } else if (act == 3) { // Tanh
+    const float t = tanh(vf);
+    d = 1.0f - t * t;
+  } else if (act == 4) { // Sigmoid
+    const float s = 1.0f / (1.0f + exp(-vf));
+    d = s * (1.0f - s);
+  }
+  d_pre[gid] = gy[gid] * d;
+}
+
+// gx = Wᵀ @ gy  (soft-double W). gid over batch * in_dim.
+kernel void welvet_dense_matvect_softdouble_batch(
+    device const float2* W [[buffer(0)]],
+    device const float* gy [[buffer(1)]],
+    device float* gx [[buffer(2)]],
+    constant uint& in_dim [[buffer(3)]],
+    constant uint& out_dim [[buffer(4)]],
+    constant uint& batch [[buffer(5)]],
+    uint gid [[thread_position_in_grid]]) {
+  const uint total = batch * in_dim;
+  if (gid >= total) return;
+  const uint b = gid / in_dim;
+  const uint i = gid % in_dim;
+  float2 acc = float2(0.0f, 0.0f);
+  const uint gyoff = b * out_dim;
+  for (uint o = 0; o < out_dim; ++o) {
+    acc = sd_add(acc, sd_mul_float(W[o * in_dim + i], gy[gyoff + o]));
+  }
+  gx[gid] = sd_to_float(acc);
+}
+
+// dW[o,i] = sum_b gy[b,o] * x[b,i]  (f32 outer; matches host f64-accum→f32 cast closely enough).
+kernel void welvet_dense_outer_batch(
+    device const float* gy [[buffer(0)]],
+    device const float* x [[buffer(1)]],
+    device float* dW [[buffer(2)]],
+    constant uint& in_dim [[buffer(3)]],
+    constant uint& out_dim [[buffer(4)]],
+    constant uint& batch [[buffer(5)]],
+    uint gid [[thread_position_in_grid]]) {
+  const uint total = out_dim * in_dim;
+  if (gid >= total) return;
+  const uint o = gid / in_dim;
+  const uint i = gid % in_dim;
+  float2 acc = float2(0.0f, 0.0f);
+  for (uint b = 0; b < batch; ++b) {
+    const float g = gy[b * out_dim + o];
+    const float xv = x[b * in_dim + i];
+    acc = sd_add(acc, sd_mul_float(float2(g, 0.0f), xv));
+  }
+  dW[gid] = sd_to_float(acc);
+}

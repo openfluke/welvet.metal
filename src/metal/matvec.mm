@@ -18,6 +18,9 @@ std::mutex g_mu;
 id<MTLCommandQueue> g_queue = nil;
 id<MTLComputePipelineState> g_pso_matvec = nil;
 id<MTLComputePipelineState> g_pso_bias_act = nil;
+id<MTLComputePipelineState> g_pso_act_deriv = nil;
+id<MTLComputePipelineState> g_pso_matvect = nil;
+id<MTLComputePipelineState> g_pso_outer = nil;
 bool g_ready = false;
 bool g_probed = false;
 std::string g_err;
@@ -60,6 +63,42 @@ Status ensure_runtime() {
       return Status::Err(StatusCode::Unsupported, g_err);
     }
     g_pso_bias_act = (__bridge_transfer id<MTLComputePipelineState>)pipe.mtl;
+    pipe.mtl = nullptr;
+  }
+  if (!g_pso_act_deriv) {
+    Pipeline pipe;
+    st = pipeline_get("welvet_dense_act_deriv", &pipe);
+    if (!st) {
+      g_probed = true;
+      g_ready = false;
+      g_err = "Metal Dense act_deriv kernel missing: " + st.message;
+      return Status::Err(StatusCode::Unsupported, g_err);
+    }
+    g_pso_act_deriv = (__bridge_transfer id<MTLComputePipelineState>)pipe.mtl;
+    pipe.mtl = nullptr;
+  }
+  if (!g_pso_matvect) {
+    Pipeline pipe;
+    st = pipeline_get("welvet_dense_matvect_softdouble_batch", &pipe);
+    if (!st) {
+      g_probed = true;
+      g_ready = false;
+      g_err = "Metal Dense MatVecT kernel missing: " + st.message;
+      return Status::Err(StatusCode::Unsupported, g_err);
+    }
+    g_pso_matvect = (__bridge_transfer id<MTLComputePipelineState>)pipe.mtl;
+    pipe.mtl = nullptr;
+  }
+  if (!g_pso_outer) {
+    Pipeline pipe;
+    st = pipeline_get("welvet_dense_outer_batch", &pipe);
+    if (!st) {
+      g_probed = true;
+      g_ready = false;
+      g_err = "Metal Dense outer kernel missing: " + st.message;
+      return Status::Err(StatusCode::Unsupported, g_err);
+    }
+    g_pso_outer = (__bridge_transfer id<MTLComputePipelineState>)pipe.mtl;
     pipe.mtl = nullptr;
   }
   g_probed = true;
@@ -351,6 +390,97 @@ Status resident_execute(ResidentDense* r, const float* x, float* pre, float* pos
   }
   std::memcpy(pre, [bufPre contents], y_bytes);
   std::memcpy(post, [bufPost contents], y_bytes);
+  return Status::Ok();
+}
+
+Status resident_backward(ResidentDense* r, const float* grad_out, const float* input,
+                         const float* pre, float* grad_in, float* grad_w) {
+  if (!r || !r->buf_w || !grad_out || !input || !pre || !grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "null resident backward");
+  }
+
+  std::lock_guard<std::mutex> lock(g_mu);
+  auto st = ensure_runtime();
+  if (!st) return st;
+
+  id<MTLDevice> device = welvet_metal_device_handle();
+  id<MTLBuffer> bufW = (__bridge id<MTLBuffer>)r->buf_w;
+
+  const NSUInteger y_bytes =
+      static_cast<NSUInteger>(r->batch) * static_cast<NSUInteger>(r->rows) * sizeof(float);
+  const NSUInteger x_bytes =
+      static_cast<NSUInteger>(r->batch) * static_cast<NSUInteger>(r->cols) * sizeof(float);
+  const NSUInteger dw_bytes =
+      static_cast<NSUInteger>(r->rows) * static_cast<NSUInteger>(r->cols) * sizeof(float);
+
+  id<MTLBuffer> bufGy = [device newBufferWithBytes:grad_out length:y_bytes
+                                           options:MTLResourceStorageModeShared];
+  id<MTLBuffer> bufPre = [device newBufferWithBytes:pre length:y_bytes
+                                            options:MTLResourceStorageModeShared];
+  id<MTLBuffer> bufDPre = [device newBufferWithLength:y_bytes options:MTLResourceStorageModeShared];
+  id<MTLBuffer> bufX = [device newBufferWithBytes:input length:x_bytes
+                                          options:MTLResourceStorageModeShared];
+  id<MTLBuffer> bufGx = [device newBufferWithLength:x_bytes options:MTLResourceStorageModeShared];
+  id<MTLBuffer> bufDW = [device newBufferWithLength:dw_bytes options:MTLResourceStorageModeShared];
+  if (!bufGy || !bufPre || !bufDPre || !bufX || !bufGx || !bufDW) {
+    return Status::Err(StatusCode::Internal, "resident bwd MTLBuffer alloc failed");
+  }
+
+  uint32_t in_dim = static_cast<uint32_t>(r->cols);
+  uint32_t out_dim = static_cast<uint32_t>(r->rows);
+  uint32_t batch_u = static_cast<uint32_t>(r->batch);
+  int32_t act_i = static_cast<int32_t>(r->act);
+
+  id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
+  id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
+
+  // act′
+  [enc setComputePipelineState:g_pso_act_deriv];
+  [enc setBuffer:bufGy offset:0 atIndex:0];
+  [enc setBuffer:bufPre offset:0 atIndex:1];
+  [enc setBuffer:bufDPre offset:0 atIndex:2];
+  [enc setBytes:&out_dim length:sizeof(uint32_t) atIndex:3];
+  [enc setBytes:&batch_u length:sizeof(uint32_t) atIndex:4];
+  [enc setBytes:&act_i length:sizeof(int32_t) atIndex:5];
+  const NSUInteger total_y = static_cast<NSUInteger>(r->batch) * static_cast<NSUInteger>(r->rows);
+  NSUInteger tg = std::min<NSUInteger>(g_pso_act_deriv.maxTotalThreadsPerThreadgroup, 256);
+  [enc dispatchThreads:MTLSizeMake(total_y, 1, 1) threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+
+  // MatVecT
+  [enc setComputePipelineState:g_pso_matvect];
+  [enc setBuffer:bufW offset:0 atIndex:0];
+  [enc setBuffer:bufDPre offset:0 atIndex:1];
+  [enc setBuffer:bufGx offset:0 atIndex:2];
+  [enc setBytes:&in_dim length:sizeof(uint32_t) atIndex:3];
+  [enc setBytes:&out_dim length:sizeof(uint32_t) atIndex:4];
+  [enc setBytes:&batch_u length:sizeof(uint32_t) atIndex:5];
+  const NSUInteger total_x = static_cast<NSUInteger>(r->batch) * static_cast<NSUInteger>(r->cols);
+  tg = std::min<NSUInteger>(g_pso_matvect.maxTotalThreadsPerThreadgroup, 256);
+  [enc dispatchThreads:MTLSizeMake(total_x, 1, 1) threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+
+  // Outer
+  [enc setComputePipelineState:g_pso_outer];
+  [enc setBuffer:bufDPre offset:0 atIndex:0];
+  [enc setBuffer:bufX offset:0 atIndex:1];
+  [enc setBuffer:bufDW offset:0 atIndex:2];
+  [enc setBytes:&in_dim length:sizeof(uint32_t) atIndex:3];
+  [enc setBytes:&out_dim length:sizeof(uint32_t) atIndex:4];
+  [enc setBytes:&batch_u length:sizeof(uint32_t) atIndex:5];
+  const NSUInteger total_w = static_cast<NSUInteger>(r->rows) * static_cast<NSUInteger>(r->cols);
+  tg = std::min<NSUInteger>(g_pso_outer.maxTotalThreadsPerThreadgroup, 256);
+  [enc dispatchThreads:MTLSizeMake(total_w, 1, 1) threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+
+  [enc endEncoding];
+  [cmd commit];
+  [cmd waitUntilCompleted];
+  if (cmd.error) {
+    NSString* desc = cmd.error.localizedDescription;
+    return Status::Err(StatusCode::Internal,
+                       std::string("Metal resident backward failed: ") +
+                           (desc ? [desc UTF8String] : "?"));
+  }
+  std::memcpy(grad_in, [bufGx contents], x_bytes);
+  std::memcpy(grad_w, [bufDW contents], dw_bytes);
   return Status::Ok();
 }
 

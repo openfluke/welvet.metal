@@ -9,8 +9,8 @@
 
 namespace welvet::dense {
 
-// Metal-only Dense. Forward uses resident soft-double W (mount once, reload after SGD).
-// Backward/SGD stay on host FormatNone for Go exact_bit; GPU mirror refreshed on next forward.
+// Metal-only Dense. Forward + NormalBP bwd on GPU (soft-double MatVec / MatVecT / outer / act′).
+// SGD still updates FormatNone WeightStore then invalidates resident W (reload on next fwd).
 struct Layer {
   int input_height = 0;
   int output_height = 0;
@@ -64,8 +64,8 @@ bool dtype_supported_metal_forward(DType dt);
 // FormatNone Dense forward on Metal with resident W (decode+upload only when invalidated).
 Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
-// NormalBP leaf: dPre = gradOut ⊙ act'(pre); dX = Wᵀ·dPre; dW = outer(dPre, x).
-// Host f64 MatVecT + outer (Go BackwardCPUTiled / welvet.cpp parity). pre = post-bias.
+// NormalBP leaf: dPre = gradOut ⊙ act'(pre); dX = Wᵀ·dPre; dW = outer(dPre, x) — all Metal.
+// pre = post-bias (same as forward `pre`). Band vs Go may be ≥strict (soft-double GPU).
 Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
                     const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
 

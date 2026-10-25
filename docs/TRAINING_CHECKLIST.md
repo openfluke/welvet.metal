@@ -18,17 +18,17 @@ Legend: **✓** = GPU Metal kernel · **✗** = still host/CPU · **✓/✗** = 
 
 | Layer | Fwd | Bwd | Notes / debt |
 |---|:---:|:---:|---|
-| Dense | ✓ | ✗ | soft-double GEMV; **bwd MatVecT/outer/SGD still host** |
-| SwiGLU | ✓/✗ | ✗ | projs via Dense GPU; SiLU / SiLU′ host |
-| MHA | ✓/✗ | ✗ | Q/K/V/O Dense GPU; attn + RoPEᵀ host |
-| CNN1/2/3 | ✓/✗ | ✓/✗ | im2col host → Dense GPU; bwd mostly host |
-| RNN | ✓/✗ | ✓/✗ | Dense GPU + host tanh / BPTT |
-| LSTM | ✓/✗ | ✓/✗ | Dense GPU + host gates / BPTT |
-| Sequential | ✓/✗ | ✓/✗ | child Dense GPU; chain host |
-| Residual | ✓/✗ | ✓/✗ | F Dense GPU; skip-add host |
-| NestedStack | ✓/✗ | ✓/✗ | nested Dense GPU; glue host |
-| Mamba | ✓/✗ | ✓/✗ | In/Out Dense GPU; scan host |
-| Metacognition | ✓/✗ | ✓/✗ | Observed Dense GPU; rules host |
+| Dense | ✓ | ✓ | soft-double GEMV + **Metal act′/MatVecT/outer** (SGD still FormatNone host→reload) |
+| SwiGLU | ✓/✗ | ✓/✗ | Dense projs GPU fwd+bwd; SiLU / SiLU′ still host |
+| MHA | ✓/✗ | ✓/✗ | Q/K/V/O Dense GPU fwd+bwd; attn + RoPEᵀ still host |
+| CNN1/2/3 | ✓/✗ | ✓/✗ | im2col host → Dense GPU; Dense bwd GPU; col2im host |
+| RNN | ✓/✗ | ✓/✗ | Dense GPU fwd+bwd; tanh′ / BPTT glue host |
+| LSTM | ✓/✗ | ✓/✗ | Dense GPU fwd+bwd; gate′ / BPTT glue host |
+| Sequential | ✓ | ✓ | child Dense GPU fwd+bwd (chain is Dense-only) |
+| Residual | ✓/✗ | ✓/✗ | F Dense GPU fwd+bwd; skip-add host |
+| NestedStack | ✓ | ✓ | nested Dense GPU fwd+bwd |
+| Mamba | ✓/✗ | ✓/✗ | In/Out Dense GPU fwd+bwd; scan still host |
+| Metacognition | ✓/✗ | ✓/✗ | Observed Dense GPU fwd+bwd; rules host |
 | Parallel | ✓/✗ | ✗ | branch Dense GPU; NormalBP gap |
 | RMSNorm | ✗ | ✗ | host f64 only — **needs shaders** |
 | LayerNorm | ✗ | ✗ | host f64 only — **needs shaders** |

@@ -170,34 +170,12 @@ Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF
     return Status::Err(StatusCode::InvalidArgument, "dense: weight shape mismatch");
   }
 
-  std::vector<float> d_pre(static_cast<std::size_t>(batch * out));
-  for (int i = 0; i < batch * out; ++i) {
-    const double g = static_cast<double>(grad_out.data[static_cast<std::size_t>(i)]) *
-                     activate_deriv_f64(static_cast<double>(pre.data[static_cast<std::size_t>(i)]),
-                                        layer.activation);
-    d_pre[static_cast<std::size_t>(i)] = static_cast<float>(g);
-  }
+  if (auto st = ensure_resident(layer, batch); !st) return st;
 
   *grad_in = TensorF32::zeros(batch, in);
   *grad_w = TensorF32::zeros(out, in);
-
-  // Host MatVecT + outer — same order as Go FormatNone (exact_bit). Does not touch GPU W.
-  for (int b = 0; b < batch; ++b) {
-    const float* gy = d_pre.data() + static_cast<std::size_t>(b * out);
-    float* gx = grad_in->data.data() + static_cast<std::size_t>(b * in);
-    if (auto st = layer.weights.matvect_f32(gy, gx); !st) {
-      return st;
-    }
-    const float* x_row = input.data.data() + static_cast<std::size_t>(b * in);
-    for (int o = 0; o < out; ++o) {
-      const double g = static_cast<double>(gy[o]);
-      float* dw = grad_w->data.data() + static_cast<std::size_t>(o * in);
-      for (int i = 0; i < in; ++i) {
-        dw[i] = static_cast<float>(static_cast<double>(dw[i]) + g * static_cast<double>(x_row[i]));
-      }
-    }
-  }
-  return Status::Ok();
+  return metal::resident_backward(&layer.gpu, grad_out.data.data(), input.data.data(),
+                                  pre.data.data(), grad_in->data.data(), grad_w->data.data());
 }
 
 Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
