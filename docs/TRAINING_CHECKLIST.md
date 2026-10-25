@@ -7,6 +7,43 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 
 **Port mirror of** [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md). Same cases / wires / column meanings; status here is **Metal** only. cpp `[x]` does **not** transfer credit.
 
+---
+
+## Metal-only mandate (non-negotiable)
+
+**welvet.metal = GPU Metal compute only.** Host/CPU math belongs in **welvet.cpp** (and Go).  
+Any host loop left in this tree is **tech debt** until the ✓/✗ table below is all ✓.
+
+Legend: **✓** = GPU Metal kernel · **✗** = still host/CPU · **✓/✗** = Dense GPU + host glue.
+
+| Layer | Fwd | Bwd | Notes / debt |
+|---|:---:|:---:|---|
+| Dense | ✓ | ✗ | soft-double GEMV; **bwd MatVecT/outer/SGD still host** |
+| SwiGLU | ✓/✗ | ✗ | projs via Dense GPU; SiLU / SiLU′ host |
+| MHA | ✓/✗ | ✗ | Q/K/V/O Dense GPU; attn + RoPEᵀ host |
+| CNN1/2/3 | ✓/✗ | ✓/✗ | im2col host → Dense GPU; bwd mostly host |
+| RNN | ✓/✗ | ✓/✗ | Dense GPU + host tanh / BPTT |
+| LSTM | ✓/✗ | ✓/✗ | Dense GPU + host gates / BPTT |
+| Sequential | ✓/✗ | ✓/✗ | child Dense GPU; chain host |
+| Residual | ✓/✗ | ✓/✗ | F Dense GPU; skip-add host |
+| NestedStack | ✓/✗ | ✓/✗ | nested Dense GPU; glue host |
+| Mamba | ✓/✗ | ✓/✗ | In/Out Dense GPU; scan host |
+| Metacognition | ✓/✗ | ✓/✗ | Observed Dense GPU; rules host |
+| Parallel | ✓/✗ | ✗ | branch Dense GPU; NormalBP gap |
+| RMSNorm | ✗ | ✗ | host f64 only — **needs shaders** |
+| LayerNorm | ✗ | ✗ | host f64 only — **needs shaders** |
+| Softmax | ✗ | ✗ | host only — **needs shaders** |
+| Embedding | ✗ | ✗ | host gather/scatter — **needs shaders** |
+| ConvT1/2/3 | ✗ | ✗ | host scatter/adjoint — **needs shaders** |
+| GDN | ✗ | ✗ | entire path host f32 — **needs shaders** |
+| KMeans | ✗ | ✗ | fwd host; NormalBP gap |
+
+**Push order:** (1) Dense MatVecT + outer + SGD on Metal → flips projection bwd for SwiGLU/MHA/CNN/RNN/LSTM/Seq/Res/Mamba/Meta. (2) Norm / Softmax / Emb / ConvT / GDN / attn / scan kernels. (3) Kill harness IPC for speed benches (resident session). Re-sign bands if GPU ≠ Go exact_bit — prefer Metal correctness over host bit-clone.
+
+Only shader file today: `shaders/welvet_dense.metal`.
+
+---
+
 ### Columns (every table)
 
 | Column | Means |
