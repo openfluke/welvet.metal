@@ -237,6 +237,29 @@ WELVET_API welvet_status welvet_convt3_forward_f32(
     int32_t kernel, int32_t stride, int32_t padding, int32_t output_padding, int32_t act,
     int32_t dtype, int32_t backend, const float* W, const float* x, float* pre, float* post);
 
+
+/* ConvT1/2/3 NormalBP leaf: scatter fwd + act′ + scatter adjoint + optional SGD. No bias.
+ * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE).
+ */
+WELVET_API welvet_status welvet_convt1_normalbp_f32(
+    int32_t batch, int32_t in_c, int32_t filters, int32_t seq_len, int32_t kernel, int32_t stride,
+    int32_t padding, int32_t output_padding, int32_t act, int32_t dtype, int32_t backend,
+    const float* W, const float* x, const float* grad_or_target, int32_t use_target, double lr,
+    float* pre, float* post, float* dX, float* dW, float* W_after, double* loss);
+
+WELVET_API welvet_status welvet_convt2_normalbp_f32(
+    int32_t batch, int32_t in_c, int32_t filters, int32_t height, int32_t width, int32_t kernel,
+    int32_t stride, int32_t padding, int32_t output_padding, int32_t act, int32_t dtype,
+    int32_t backend, const float* W, const float* x, const float* grad_or_target, int32_t use_target,
+    double lr, float* pre, float* post, float* dX, float* dW, float* W_after, double* loss);
+
+WELVET_API welvet_status welvet_convt3_normalbp_f32(
+    int32_t batch, int32_t in_c, int32_t filters, int32_t depth, int32_t height, int32_t width,
+    int32_t kernel, int32_t stride, int32_t padding, int32_t output_padding, int32_t act,
+    int32_t dtype, int32_t backend, const float* W, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* RNN — WRN1 wire. packed [IH|HH|bias]; Dense soft-double + host f64 tanh. */
 WELVET_API welvet_status welvet_rnn_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,

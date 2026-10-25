@@ -59,3 +59,11 @@ int run_cnn3_normalbp(int bench_iters);               // C3B1 → C3BO (+ option
 int run_volume_cnn1_normalbp(int bench_iters);        // C1V1 → C1VO (+ optional WVB1)
 int run_volume_cnn2_normalbp(int bench_iters);        // C2V1 → C2VO (+ optional WVB1)
 int run_volume_cnn3_normalbp(int bench_iters);        // C3V1 → C3VO (+ optional WVB1)
+
+// ConvT1/2/3 NormalBP (training)
+int run_convt1_normalbp(int bench_iters);              // T1B1 → T1BO (+ optional WVB1)
+int run_convt2_normalbp(int bench_iters);              // T2B1 → T2BO (+ optional WVB1)
+int run_convt3_normalbp(int bench_iters);              // T3B1 → T3BO (+ optional WVB1)
+int run_volume_convt1_normalbp(int bench_iters);       // T1V1 → T1VO (+ optional WVB1)
+int run_volume_convt2_normalbp(int bench_iters);       // T2V1 → T2VO (+ optional WVB1)
+int run_volume_convt3_normalbp(int bench_iters);       // T3V1 → T3VO (+ optional WVB1)

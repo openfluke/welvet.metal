@@ -173,4 +173,102 @@ Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* 
   return Status::Ok();
 }
 
+
+int grad_w_size(const Layer& layer) {
+  return layer.proj.weights.rows * layer.proj.weights.cols;
+}
+
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "convt2: nil grad_in/grad_w");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+  layer.cfg = cfg;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg, input, &lay); !st) return st;
+
+  const int sp_in = lay.in_h * lay.in_w;
+  const int sp_out = lay.out_h * lay.out_w;
+  const int want_out = lay.batch * lay.filters * sp_out;
+  if (static_cast<int>(grad_out.data.size()) < want_out ||
+      static_cast<int>(pre.data.size()) < want_out) {
+    return Status::Err(StatusCode::InvalidArgument, "convt2: grad/pre short");
+  }
+
+  std::vector<float> w;
+  if (auto st = flatten_w_f32(layer.proj.weights, &w); !st) {
+    return Status::Err(st.code, std::string("convt2 weights: ") + st.message);
+  }
+  const int kk = lay.k * lay.k;
+
+  std::vector<double> d_pre(static_cast<std::size_t>(want_out));
+  for (int i = 0; i < want_out; ++i) {
+    d_pre[static_cast<std::size_t>(i)] =
+        static_cast<double>(grad_out.data[static_cast<std::size_t>(i)]) *
+        activate_deriv_f64(static_cast<double>(pre.data[static_cast<std::size_t>(i)]),
+                           cfg.activation);
+  }
+
+  const int n_in = lay.batch * lay.in_c * sp_in;
+  const int n_w = lay.filters * lay.in_c * kk;
+  std::vector<double> g_in(static_cast<std::size_t>(n_in), 0.0);
+  std::vector<double> g_w(static_cast<std::size_t>(n_w), 0.0);
+
+  for (int b = 0; b < lay.batch; ++b) {
+    for (int ic = 0; ic < lay.in_c; ++ic) {
+      for (int ih = 0; ih < lay.in_h; ++ih) {
+        for (int iw = 0; iw < lay.in_w; ++iw) {
+          const int in_idx = b * lay.in_c * sp_in + ic * sp_in + ih * lay.in_w + iw;
+          const double xin = static_cast<double>(input.data[static_cast<std::size_t>(in_idx)]);
+          for (int f = 0; f < lay.filters; ++f) {
+            for (int kh = 0; kh < lay.k; ++kh) {
+              for (int kw = 0; kw < lay.k; ++kw) {
+                const int oh = ih * lay.stride - lay.padding + kh;
+                const int ow = iw * lay.stride - lay.padding + kw;
+                if (oh < 0 || oh >= lay.out_h || ow < 0 || ow >= lay.out_w) continue;
+                const int out_idx =
+                    b * lay.filters * sp_out + f * sp_out + oh * lay.out_w + ow;
+                const int kw_idx = f * lay.in_c * kk + ic * kk + kh * lay.k + kw;
+                const double gp = d_pre[static_cast<std::size_t>(out_idx)];
+                g_w[static_cast<std::size_t>(kw_idx)] += xin * gp;
+                g_in[static_cast<std::size_t>(in_idx)] +=
+                    static_cast<double>(w[static_cast<std::size_t>(kw_idx)]) * gp;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  grad_in->shape = {lay.batch, lay.in_c, lay.in_h, lay.in_w};
+  grad_in->data.resize(static_cast<std::size_t>(n_in));
+  for (int i = 0; i < n_in; ++i) {
+    grad_in->data[static_cast<std::size_t>(i)] =
+        static_cast<float>(g_in[static_cast<std::size_t>(i)]);
+  }
+  grad_w->shape = {lay.filters, lay.in_c * kk};
+  grad_w->data.resize(static_cast<std::size_t>(n_w));
+  for (int i = 0; i < n_w; ++i) {
+    grad_w->data[static_cast<std::size_t>(i)] =
+        static_cast<float>(g_w[static_cast<std::size_t>(i)]);
+  }
+  return Status::Ok();
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "convt2: ApplyGradSGD nil");
+  }
+  return dense::apply_grad_sgd(&layer->proj, dW, lr);
+}
+
+Status export_weights_f32(const Layer& layer, float* dst) {
+  if (!dst) return Status::Err(StatusCode::InvalidArgument, "convt2: nil dst");
+  return layer.proj.weights.export_f32(dst);
+}
+
 } // namespace welvet::convt2

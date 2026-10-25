@@ -1431,6 +1431,24 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "C3V1", 4) == 0) {
     return run_volume_cnn3_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "T1B1", 4) == 0) {
+    return run_convt1_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "T2B1", 4) == 0) {
+    return run_convt2_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "T3B1", 4) == 0) {
+    return run_convt3_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "T1V1", 4) == 0) {
+    return run_volume_convt1_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "T2V1", 4) == 0) {
+    return run_volume_convt2_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "T3V1", 4) == 0) {
+    return run_volume_convt3_normalbp(bench_iters);
+  }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);
   }

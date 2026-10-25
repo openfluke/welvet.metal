@@ -1,6 +1,9 @@
 #include "welvet/runtime/training.hpp"
 
 #include "welvet/cnn1.hpp"
+#include "welvet/convt1.hpp"
+#include "welvet/convt2.hpp"
+#include "welvet/convt3.hpp"
 #include "welvet/cnn2.hpp"
 #include "welvet/cnn3.hpp"
 #include "welvet/dense.hpp"
@@ -105,9 +108,18 @@ Status sgd_dense(architecture::Grid& g, const forward::Result& fwd, const backwa
     case architecture::OpKind::CNN3:
       st_a = cnn3::apply_grad_sgd(&cell->cnn3_op, *it->second, lr);
       break;
+    case architecture::OpKind::ConvT1:
+      st_a = convt1::apply_grad_sgd(&cell->convt1_op, *it->second, lr);
+      break;
+    case architecture::OpKind::ConvT2:
+      st_a = convt2::apply_grad_sgd(&cell->convt2_op, *it->second, lr);
+      break;
+    case architecture::OpKind::ConvT3:
+      st_a = convt3::apply_grad_sgd(&cell->convt3_op, *it->second, lr);
+      break;
     default:
       return Status::Gap(
-          "training: SGD cell Op not yet on Metal (Dense/…/MHA/CNN NormalBP first)");
+          "training: SGD cell Op not yet on Metal (Dense/…/CNN/ConvT NormalBP first)");
     }
     if (!st_a) {
       return st_a;

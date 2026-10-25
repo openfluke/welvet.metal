@@ -157,4 +157,93 @@ Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* 
   return Status::Ok();
 }
 
+
+int grad_w_size(const Layer& layer) {
+  return layer.proj.weights.rows * layer.proj.weights.cols;
+}
+
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "convt1: nil grad_in/grad_w");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+  layer.cfg = cfg;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg, input, &lay); !st) return st;
+
+  const int want_out = lay.batch * lay.filters * lay.out_len;
+  if (static_cast<int>(grad_out.data.size()) < want_out ||
+      static_cast<int>(pre.data.size()) < want_out) {
+    return Status::Err(StatusCode::InvalidArgument, "convt1: grad/pre short");
+  }
+
+  std::vector<float> w;
+  if (auto st = flatten_w_f32(layer.proj.weights, &w); !st) {
+    return Status::Err(st.code, std::string("convt1 weights: ") + st.message);
+  }
+
+  std::vector<double> d_pre(static_cast<std::size_t>(want_out));
+  for (int i = 0; i < want_out; ++i) {
+    d_pre[static_cast<std::size_t>(i)] =
+        static_cast<double>(grad_out.data[static_cast<std::size_t>(i)]) *
+        activate_deriv_f64(static_cast<double>(pre.data[static_cast<std::size_t>(i)]),
+                           cfg.activation);
+  }
+
+  const int n_in = lay.batch * lay.in_c * lay.seq;
+  const int n_w = lay.filters * lay.in_c * lay.k;
+  std::vector<double> g_in(static_cast<std::size_t>(n_in), 0.0);
+  std::vector<double> g_w(static_cast<std::size_t>(n_w), 0.0);
+
+  for (int b = 0; b < lay.batch; ++b) {
+    for (int ic = 0; ic < lay.in_c; ++ic) {
+      for (int iw = 0; iw < lay.seq; ++iw) {
+        const int in_idx = b * lay.in_c * lay.seq + ic * lay.seq + iw;
+        const double xin = static_cast<double>(input.data[static_cast<std::size_t>(in_idx)]);
+        for (int f = 0; f < lay.filters; ++f) {
+          for (int k = 0; k < lay.k; ++k) {
+            const int ow = iw * lay.stride - lay.padding + k;
+            if (ow < 0 || ow >= lay.out_len) continue;
+            const int out_idx = b * lay.filters * lay.out_len + f * lay.out_len + ow;
+            const int kw_idx = f * lay.in_c * lay.k + ic * lay.k + k;
+            const double gp = d_pre[static_cast<std::size_t>(out_idx)];
+            g_w[static_cast<std::size_t>(kw_idx)] += xin * gp;
+            g_in[static_cast<std::size_t>(in_idx)] +=
+                static_cast<double>(w[static_cast<std::size_t>(kw_idx)]) * gp;
+          }
+        }
+      }
+    }
+  }
+
+  grad_in->shape = {lay.batch, lay.in_c, lay.seq};
+  grad_in->data.resize(static_cast<std::size_t>(n_in));
+  for (int i = 0; i < n_in; ++i) {
+    grad_in->data[static_cast<std::size_t>(i)] =
+        static_cast<float>(g_in[static_cast<std::size_t>(i)]);
+  }
+  grad_w->shape = {lay.filters, lay.in_c * lay.k};
+  grad_w->data.resize(static_cast<std::size_t>(n_w));
+  for (int i = 0; i < n_w; ++i) {
+    grad_w->data[static_cast<std::size_t>(i)] =
+        static_cast<float>(g_w[static_cast<std::size_t>(i)]);
+  }
+  return Status::Ok();
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "convt1: ApplyGradSGD nil");
+  }
+  return dense::apply_grad_sgd(&layer->proj, dW, lr);
+}
+
+Status export_weights_f32(const Layer& layer, float* dst) {
+  if (!dst) return Status::Err(StatusCode::InvalidArgument, "convt1: nil dst");
+  return layer.proj.weights.export_f32(dst);
+}
+
 } // namespace welvet::convt1

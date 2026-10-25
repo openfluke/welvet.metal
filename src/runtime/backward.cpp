@@ -1,6 +1,9 @@
 #include "welvet/runtime/backward.hpp"
 
 #include "welvet/cnn1.hpp"
+#include "welvet/convt1.hpp"
+#include "welvet/convt2.hpp"
+#include "welvet/convt3.hpp"
 #include "welvet/cnn2.hpp"
 #include "welvet/cnn3.hpp"
 #include "welvet/dense.hpp"
@@ -42,9 +45,15 @@ Status cell(architecture::Cell& cell, const TensorF32& grad_out, const TensorF32
     return cnn2::backward_f32(cell.cnn2_op, grad_out, input, pre, grad_in, dW);
   case architecture::OpKind::CNN3:
     return cnn3::backward_f32(cell.cnn3_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::ConvT1:
+    return convt1::backward_f32(cell.convt1_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::ConvT2:
+    return convt2::backward_f32(cell.convt2_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::ConvT3:
+    return convt3::backward_f32(cell.convt3_op, grad_out, input, pre, grad_in, dW);
   default:
     return Status::Gap(
-        "runtime.backward: cell Op not yet on Metal (Dense/…/MHA/CNN NormalBP first)");
+        "runtime.backward: cell Op not yet on Metal (Dense/…/CNN/ConvT NormalBP first)");
   }
 }
 

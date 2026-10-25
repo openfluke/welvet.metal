@@ -17,11 +17,11 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 
 Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the whole mode table) is signed.
 
-**Current engine:** forward/volume FormatNone×34 largely landed; **Dense…CNN3 NormalBP** leaf+volume ×34 signed (Softmax ≥loose/~strict; MHA leaf×34 W exact + dX/dW ≥strict). Resident Dense soft-double W (reload after SGD). Other NormalBP layers + TrainModes still open.
+**Current engine:** forward/volume FormatNone×34 largely landed; **Dense…ConvT3 NormalBP** leaf+volume ×34 signed (Softmax ≥loose/~strict; MHA leaf×34 W exact + dX/dW ≥strict). Resident Dense soft-double W (reload after SGD). Other NormalBP layers + TrainModes still open.
 
 **Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack volume-fwd still open (no `bind_stack`).
 
-**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--mha-train` / `--cnn-train` live; other flags land with each suite.
+**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--cnn-train` / `--convt-train` live; other flags land with each suite.
 
 ---
 
@@ -158,14 +158,14 @@ Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + proj W reset). i
 
 Run: `./scripts/macos_build_w2a.sh --convt-train`  
 Wire: `T1B1`/`T1BO`, `T2B1`/`T2BO`, `T3B1`/`T3BO` (leaf); `T*V1`/`T*VO` (volume). Exact_bit vs Go.  
-Timing: same `--bench=N` / spd%Δ convention. Scatter forward + act Jacobian + scatter adjoint (no bias).
+Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + proj W reset). Scatter forward + act Jacobian + scatter adjoint (no bias).
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1–3 | Leaf Float32 ConvT1/2/3 | [ ] | exact_bit + speed |
-| 4–6 | Leaf ×34 ConvT1/2/3 | [ ] | exact_bit spectrum |
-| 7–9 | Volume 1×1×1×1 / chain / ×34 | [ ] | shape-preserving pad |
-| 10–12 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
+| 1–3 | Leaf Float32 ConvT1/2/3 | [x] | exact_bit + speed |
+| 4–6 | Leaf ×34 ConvT1/2/3 | [x] | exact_bit spectrum |
+| 7–9 | Volume 1×1×1×1 / chain / ×34 | [x] | shape-preserving pad |
+| 10–12 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (RNN NormalBP) — sign-off evidence
 
@@ -453,9 +453,9 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | CNN1 | [x] | [x] | [x] | `0.09-m2-cnn-nbp` |
 | CNN2 | [x] | [x] | [x] | `0.09-m2-cnn-nbp` |
 | CNN3 | [x] | [x] | [x] | `0.09-m2-cnn-nbp` |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
+| ConvT1 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
+| ConvT2 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
+| ConvT3 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
 | RNN | [ ] | [ ] | [ ] | |
 | LSTM | [ ] | [ ] | [ ] | |
 | Sequential | [ ] | [ ] | [ ] | |
@@ -467,7 +467,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [ ] | [ ] | [ ] | |
 
-**Checkpoint:** `0.09-m2-cnn-nbp` — Dense…CNN3 NormalBP leaf+volume ×34 (resident Dense proj W; Softmax ≥loose/~strict); next ConvT1.
+**Checkpoint:** `0.10-m2-convt-nbp` — Dense…ConvT3 NormalBP leaf+volume ×34 (resident Dense proj W; Softmax ≥loose/~strict); next RNN.
 
 ---
 
@@ -1343,6 +1343,7 @@ Ship: `runtime/line` `Credit::FamilyTweenSplitSparse` on pop (`apply_sparse_chil
 
 | Tag | Notes |
 |---|---|
+| `0.10-m2-convt-nbp` | ConvT1/2/3 NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`T1B1`/`T2B1`/`T3B1` + `T*V1`; scatter+act′+adjoint, no bias) |
 | `0.09-m2-cnn-nbp` | CNN1/2/3 NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`C1B1`/`C2B1`/`C3B1` + `C*V1`; im2col→Dense bwd→col2im) |
 | `0.08-m2-mha-nbp` | MHA NormalBP Go↔Metal: leaf DecoderCausal/GQA/Encoder + ×34 (W exact; dX/dW ≥strict) + volume 111/chain/×34/222/211×34 exact_bit (`WHB1`/`WHV1`; resident Q/K/V/O) |
 | `0.07-m2-embedding-nbp` | Embedding NormalBP Go↔Metal: leaf Float32+×34 + volume 1×1×1×1 / chain / ×34 / 2×2×2×1 / 2×1×1×1×34 exact_bit (`WEB1`/`WEV1`; dX=0 scatter dW) |
