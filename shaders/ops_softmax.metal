@@ -32,7 +32,8 @@ kernel void op_softmax_forward(OP_ARGS) {
   }
   float se = 0;
   for (int i = 0; i < cols; ++i) {
-    result[i] = exp(logits[i] - mx);
+    // Go evaluates exp in float64, then rounds each term to Float32.
+    result[i] = sd_to_float(sd_exp(float2(logits[i] - mx, 0)));
     se += result[i];
   }
   for (int i = 0; i < cols; ++i)

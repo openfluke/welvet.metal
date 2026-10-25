@@ -31,6 +31,12 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   Shared ModeMeshBP volume Forward+Step fixtures cover all supported families
   at 222 Float32 and 211 ×34 (GDN Float32 only). Non-Dense mesh-clock BPTT parity
   remains unverified.
+- Tween ModeTween uses Metal block-average gap projection and local backward/SGD
+  at lr×0.5. Sequential/Residual expand Dense leaves; NestedStack retains the
+  original forward inputs during local updates. All 21 supported families have
+  leaf/volume evidence, including all supported dtypes (GDN Float32 only).
+  GDN leaf updated weights use a ≥strict floor; other Tween leaf weights are
+  exact, with the finite loss band above. Other Tween variants remain unverified.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
   Promoted reductions and transcendentals use float2 before rounding to Float32.
 
@@ -60,6 +66,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/build_macos.sh
 ./scripts/macos_build_w2a.sh --normalbp-all
 ./scripts/macos_build_w2a.sh --stepbp-train
+./scripts/macos_build_w2a.sh --tween-train
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
@@ -69,8 +76,11 @@ supported Float32 line/mesh cases. `TestGoVMetalNormalBP` runs all 17 requested
 NormalBP groups / 128 case checks. The combined runner executes both gates and
 defaults to one measured iteration per fixture. The StepBP runner executes
 `TestGoVMetalStepBPTrain` (84 case groups, with dtype sweeps) and `TestGoVMetalOnly`.
-Line benchmark iterations reset all weights/configuration before each run and
-return the real final loss; reset cost is included. Both runners default to one
+The Tween runner executes `TestGoVMetalTweenTrain` (80 case groups, including
+leaf/volume dtype sweeps) and `TestGoVMetalOnly`, which also checks projection
+and nested local credit. Line and Tween benchmark iterations reset all
+weights/configuration before each run and
+return the real final loss; reset cost is included. All three runners default to one
 measured iteration; set
 `WELVET_METAL_BENCH_ITERS=2000` for longer timing runs.
 

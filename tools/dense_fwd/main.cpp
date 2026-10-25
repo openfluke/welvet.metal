@@ -1491,6 +1491,28 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "GDV1", 4) == 0) {
     return run_volume_gdn_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "TWB1", 4) == 0) return run_tween_leaf(bench_iters);
+  if (std::memcmp(magic, "TWV1", 4) == 0) return run_volume_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "TRV1", 4) == 0) return run_volume_rmsnorm_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "TLV1", 4) == 0) return run_volume_layernorm_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "TSV1", 4) == 0) return run_volume_swiglu_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "TXV1", 4) == 0) return run_volume_softmax_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "TEV1", 4) == 0) return run_volume_embedding_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "THV1", 4) == 0) return run_volume_mha_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "C1TV", 4) == 0) return run_volume_cnn1_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "C2TV", 4) == 0) return run_volume_cnn2_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "C3TV", 4) == 0) return run_volume_cnn3_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "T1TV", 4) == 0) return run_volume_convt1_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "T2TV", 4) == 0) return run_volume_convt2_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "T3TV", 4) == 0) return run_volume_convt3_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "RNTV", 4) == 0) return run_volume_rnn_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "LSTV", 4) == 0) return run_volume_lstm_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "SQTV", 4) == 0) return run_volume_sequential_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "RETV", 4) == 0) return run_volume_residual_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "MBTV", 4) == 0) return run_volume_mamba_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "MCTV", 4) == 0) return run_volume_metacognition_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "GDTV", 4) == 0) return run_volume_gdn_normalbp(bench_iters, true);
+  if (std::memcmp(magic, "SKTV", 4) == 0) return run_volume_stack_normalbp(bench_iters, true);
   if (std::memcmp(magic, "STB1", 4) == 0) {
     return run_stepbp(bench_iters);
   }

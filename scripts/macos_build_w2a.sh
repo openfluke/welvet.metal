@@ -37,9 +37,10 @@ for arg in "$@"; do
     --metacognition-train) MODE="metacognition_train" ;;
     --gdn-train) MODE="gdn_train" ;;
     --stack-train) MODE="stack_train" ;;
+    --tween-train) MODE="tween_train" ;;
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
-      echo "usage: $0 [--normalbp-all|--metal-only|--dense-train|…|--stack-train|--stepbp-train]"
+      echo "usage: $0 [--normalbp-all|--metal-only|--dense-train|…|--stack-train|--stepbp-train|--tween-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
@@ -127,6 +128,12 @@ if [[ "$MODE" == "stack_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalStackTrain$' -timeout 60m
   exit 0
 fi
+if [[ "$MODE" == "tween_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalTweenTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
 if [[ "$MODE" == "stepbp_train" ]]; then
   export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
   go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalStepBPTrain|TestGoVMetalOnly)$' -timeout 30m

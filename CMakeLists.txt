@@ -71,6 +71,7 @@ set(WELVET_CORE_SOURCES
   src/runtime/training.cpp
   src/runtime/line.cpp
   src/runtime/step.cpp
+  src/runtime/tween_train.cpp
   src/systems/tween.cpp
   src/gaps/registry.cpp
   src/interop/c_abi.cpp

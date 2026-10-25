@@ -7,6 +7,7 @@
 #include "welvet/dtype.hpp"
 #include "welvet/layer.hpp"
 #include "welvet/runtime/line.hpp"
+#include "welvet/runtime/tween_train.hpp"
 #include "welvet/runtime/step.hpp"
 #include "welvet/stack.hpp"
 #include "welvet/cnn1.hpp"
@@ -880,6 +881,113 @@ int run_stepbp(int bench_iters) {
     }
     if (!write_exact(&nw, 1)) return 2;
     if (nw > 0 && !write_exact(Wa.data(), Wa.size())) return 2;
+  }
+  return 0;
+}
+
+int run_tween_leaf(int bench_iters) {
+  int32_t n_children = 0, n_ticks = 0, batch = 0;
+  double lr = 0.0;
+  if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
+      !read_exact(&lr, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short TWB1 header\n");
+    return 2;
+  }
+  if (n_children <= 0 || n_ticks <= 0 || batch <= 0) return 1;
+  (void)n_ticks;
+
+  ChildReader initial;
+  welvet::stack::Layer stack;
+  stack.meta.type = welvet::LayerType::Stack;
+  stack.children.resize(static_cast<std::size_t>(n_children));
+  for (int32_t i = 0; i < n_children; ++i) {
+    if (!read_child(initial, &stack.children[static_cast<std::size_t>(i)])) {
+      std::fprintf(stderr, "welvet_dense_fwd: bad TWB1 child %d\n", i);
+      return 2;
+    }
+  }
+
+  int32_t x_ndim = 0, t_ndim = 0;
+  if (!read_exact(&x_ndim, 1) || x_ndim <= 0 || x_ndim > 5) return 2;
+  std::vector<int32_t> x_shape(static_cast<std::size_t>(x_ndim));
+  if (!read_exact(x_shape.data(), x_shape.size())) return 2;
+  if (!read_exact(&t_ndim, 1) || t_ndim <= 0 || t_ndim > 5) return 2;
+  std::vector<int32_t> t_shape(static_cast<std::size_t>(t_ndim));
+  if (!read_exact(t_shape.data(), t_shape.size())) return 2;
+  const int x_len = prod_shape(x_shape);
+  const int t_len = prod_shape(t_shape);
+
+  // Use first tick only (ModeTween is full-chain, not Line systolic).
+  std::vector<float> x(static_cast<std::size_t>(x_len));
+  std::vector<float> tgt(static_cast<std::size_t>(t_len));
+  if (!read_exact(x.data(), x.size()) || !read_exact(tgt.data(), tgt.size())) return 2;
+  for (int32_t t = 1; t < n_ticks; ++t) {
+    std::vector<float> skip(static_cast<std::size_t>(x_len + t_len));
+    if (!read_exact(skip.data(), skip.size())) return 2;
+  }
+  (void)batch;
+
+  welvet::TensorF32 xin, target;
+  xin.shape.assign(x_shape.begin(), x_shape.end());
+  xin.data = x;
+  target.shape.assign(t_shape.begin(), t_shape.end());
+  target.data = tgt;
+
+  double loss = 0.0;
+  auto once = [&]() -> welvet::Status {
+    stack = welvet::stack::Layer{};
+    stack.meta.type = welvet::LayerType::Stack;
+    stack.children.resize(static_cast<size_t>(n_children));
+    ChildReader replay(&initial.bytes);
+    for (auto& child : stack.children) {
+      if (!read_child(replay, &child))
+        return welvet::Status::Err(welvet::StatusCode::Internal, "bad TWB1 replay");
+    }
+    return welvet::runtime::tween_train::train_stack_mse(stack, xin, target, lr, &loss);
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 2; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
+  } else {
+    if (auto st = once(); !st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+
+  if (!write_magic("TWBO") || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
+  for (int32_t i = 0; i < n_children; ++i) {
+    auto& ch = stack.children[static_cast<std::size_t>(i)];
+    const int nw = welvet::stack::child_grad_w_size(ch);
+    std::vector<float> Wa(static_cast<std::size_t>(std::max(nw, 0)));
+    if (nw > 0) {
+      auto est = welvet::stack::child_export_f32(ch, Wa.data());
+      if (!est) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", est.message.c_str());
+        return 1;
+      }
+    }
+    const int32_t n = static_cast<int32_t>(Wa.size());
+    if (!write_exact(&n, 1) || (n > 0 && !write_exact(Wa.data(), Wa.size()))) return 2;
   }
   return 0;
 }

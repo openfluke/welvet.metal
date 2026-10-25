@@ -138,7 +138,7 @@ const std::vector<Entry> &build() {
       {"train.camsync", "training", "gap? CamSync / BlendStores Metal", false},
 
       // --- Systems / model ---
-      {"systems.tween", "systems", "gap? Tween* projected credit Metal", false},
+      {"systems.tween", "systems", "ModeTween projected local credit on Metal; other Tween modes open", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
       {"systems.tanhi", "systems", "gap? TANHI", false},

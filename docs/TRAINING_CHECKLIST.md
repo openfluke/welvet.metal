@@ -22,6 +22,7 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 | MSE / MSEGrad | Metal kernels; scalar loss is exported in IEEE float64 representation |
 | SGD and native storage updates | Metal arithmetic and native FormatNone encoding across all 34 dtypes; bias updates run on Metal too |
 | GDN | Metal Float32 truncated-BPTT; state/conv history stop-gradient |
+| Tween ModeTween | Metal block-average projection and local credit at lr×0.5; all 21 supported families / dtypes |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging remain |
 | Mesh gradient joins | Metal accumulation kernel; Dense mesh-clock ×34, disabled-cell and remote-link checks |
 | KMeans / Parallel NormalBP | Open; no CPU numerical fallback |
@@ -32,7 +33,9 @@ passed in `w2a` under `TestGoVMetalNormalBP`, including all dtype loops and leaf
 chain and volumetric fixtures. `TestGoVMetalOnly` also passed its primitive,
 activation/derivative, native update, cache-coherence, rejected-host-API and 13
 Float32 NormalBP/Line/Mesh smoke cases. Shared and static builds passed.
-These are working-tree validations; no new release tag is claimed.
+Tween ModeTween also passes 80 case groups covering supported leaf and volume
+dtypes, plus GPU projection/nested-credit primitive checks. These are working-tree
+validations; no new release tag is claimed.
 
 **Precision policy:** exact tensor bits where required by each case; finite loss
 uses `abs(go-metal) <= 1e-12 * max(1, abs(go))`. NormalBP weight comparisons allow
@@ -357,29 +360,43 @@ not establish a performance win.
 ## w2a Go↔Metal (Tween ModeTween) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --tween-train`  
-Wires: `TWB1`/`TWBO` (Stack ModeTween leaf); `TWV1`/`TWVO` + `TRV1`…`MBTV` (volume reverse-hop projected local @ lr×0.5). Exact_bit vs Go.  
-Each leaf ×34 kind prints **dtype / band / exact%W / goµs / mtlµs / spd%Δ**.  
-3D: Dense 111/211/222 + ModeTween volume 2×2×2×1 for all NormalBP-signed kinds. CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Wires: `TWB1`/`TWBO` (Stack ModeTween leaf), `TWV1`/`TWVO` (Dense volume),
+and per-kind volume wires `TRV1`…`MBTV`, `MCTV`, `GDTV`, `SKTV`.
+`TestGoVMetalTweenTrain` contains **80 case groups**, including **20 leaf ×34**
+and **20 volume ×34** dtype sweeps. GDN is Float32-only.
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1 | Dense multi-hop Float32 (W/loss) | [ ] | ModeTween soft_lr=lr×0.5 |
-| 2 | Dense 1-hop ×34 | [ ] | spectrum + speed table |
-| 3–4 | RMSNorm f32 + ×34 | [ ] | full spectrum + speed |
-| 5–6 | LayerNorm f32 + ×34 | [ ] | full spectrum + speed |
-| 7–8 | Softmax f32 + ×34 | [ ] | full spectrum + speed |
-| 9–10 | SwiGLU f32 + ×34 | [ ] | full spectrum + speed |
-| 11–12 | Sequential f32 + ×34 | [ ] | leaf-projected (no chain) |
-| 13–14 | Residual f32 + ×34 | [ ] | leaf-projected (no chain) |
-| 15–16 | Mamba f32 + ×34 | [ ] | full spectrum + speed |
-| 17–18 | Embedding f32 + ×34 | [ ] | full spectrum + speed |
-| 19–20 | MHA f32 + ×34 | [ ] | full spectrum + speed |
-| 21–22 | CNN1 f32 + ×34 | [ ] | full spectrum + speed (CNN2/3 share) |
-| 23–24 | ConvT1 f32 + ×34 | [ ] | full spectrum + speed (ConvT2/3 share) |
-| 25–26 | RNN f32 + ×34 | [ ] | full spectrum + speed |
-| 27–28 | LSTM f32 + ×34 | [ ] | full spectrum + speed |
-| 29–31 | Dense Tween volume 111/211/222 | [ ] | TWV1 exact_bit + speed |
-| 32–48 | ModeTween volume 2×2×2×1 all signed kinds | [ ] | TRV1…MBTV / C1TV…; reverse-hop @ lr×0.5 |
+All numerical projection, forward, backward, loss and SGD work runs on Metal.
+The global gap is block-averaged onto each local output shape and applied at
+`soft_lr = lr × 0.5`; Sequential/Residual expand their Dense leaves without
+chain-rule credit. Host code schedules the walk and stages buffers/tapes.
+
+| Case group | Status | Evidence |
+|---|:---:|---|
+| Dense multi-hop Float32 + 1-hop ×34 | [x] | Width-changing projected credit; native weight updates |
+| RMSNorm / LayerNorm Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Softmax Float32 + ×34 | [x] | Weightless loss checks; GPU exp uses promoted evaluation before Float32 rounding |
+| SwiGLU Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Sequential / Residual Float32 + ×34 | [x] | Leaf-projected credit, original forward inputs retained |
+| Mamba / Metacognition Float32 + ×34 | [x] | Exact weights; finite loss band |
+| GDN Float32 | [x] | ≥strict updated weights; finite loss band (one Float32-step weight difference remains) |
+| NestedStack Float32 + ×34 | [x] | Flattened leaf walk; exact weights and finite loss band |
+| Embedding / MHA Float32 + ×34 | [x] | Exact weights; finite loss band |
+| CNN1/2/3 / ConvT1/2/3 ×34 | [x] | Explicit per-dimension leaf fixtures, including Float32 and rank-5 inputs |
+| RNN / LSTM Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Dense volume 111 / 211 / 222 Float32 | [x] | Reverse-hop projected local updates |
+| Volume 222 Float32: all 21 supported families | [x] | Per-kind local update dispatch; finite loss band |
+| Volume 211 ×34: all 20 dtype-generic families | [x] | Native storage updates across all supported dtypes |
+| GPU projection and nested-credit primitives | [x] | Downsample, upsample, cancellation, invalid shapes, and original-input local updates |
+| Benchmark fixture reset | [x] | All leaf dtype sweeps and Dense volume dtype cases compare measured-run output against an independent run |
+
+**Validated:** 2026-10-26, unreleased. Exact tensor bits are required where
+specified; loss uses the finite float2 band above. GDN leaf weights require
+≥strict, rather than exact bits. Volume weight subnormal flushing follows the
+existing Metal policy. KMeans and Parallel remain deferred because their
+NormalBP kernels are unavailable; no host numerical fallback is supplied.
+This sign-off is ModeTween only. TweenChain, TweenSplit, StepTween and MeshTween
+retain their separate pending gates. Graph residency and performance tuning
+remain open; benchmark timings include resetting the fixture.
 
 ## w2a Go↔Metal (TweenChain ModeTweenChain) — sign-off evidence
 
@@ -565,35 +582,35 @@ Ship: thin Stack host + `runtime/line` TickLine/TrainLineMSE; wire `STB1`/`STBO`
 
 ModeTween: projected local credit @ `soft_lr = lr × 0.5` (Go `applyProjectedTween` — same gap on every leaf, no chain rule).  
 Ship: `systems/tween` + `runtime/tween_train`; wires `TWB1`/`TWBO` + `TWV1`/`TWVO` + per-kind `TRV1`…`MBTV`; w2a `--tween-train`.  
-CNN2/3 and ConvT2/3 share CNN1/ConvT1 dispatch. 3D = reverse-hop volume 2×2×2×1 for all NormalBP-signed kinds.
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = reverse-hop volume 2×2×2×1 for all NormalBP-signed kinds.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including all supported dtypes (GDN Float32 only). GDN leaf updated weights retain a ≥strict floor; other declared bands above apply. KMeans/Parallel and the other Tween variants remain open.
 
 ---
 
@@ -1400,7 +1417,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
-| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. Non-Dense mesh-clock parity remains open. |
+| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. Non-Dense mesh-clock parity remains open. ModeTween: 80 case groups, supported leaf/volume dtypes, Metal projection/local credit and benchmark reset checks passed. |
 | `0.19-m2-meshbp` | StepBP Line + MeshBP Go↔Metal: STB1 Line FamilyBP × kinds (+×34) + MBP1 Dense mesh-clock 111/211/222 + ModeMeshBP vol 222 for NormalBP-signed kinds (`runtime/line` + `runtime/step`; KMeans Line deferred) |
 | `0.18-m2-stack-nbp` | Stack NestedStack-of-Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`STKB`/`STKV`; Dense Dim→Dim Linear, loom n_children×[Dim×Dim]; bind_stack) |
 | `0.17-m2-gdn-nbp` | GDN NormalBP Go↔Metal: leaf ≥loose + volume 111/chain/222 ≥industry f32-only (`GDB1`/`GDV1`; truncated-BPTT; Metal≡cpp host f32 scan) |
