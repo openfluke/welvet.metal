@@ -1257,7 +1257,8 @@ static void usage() {
                "  --bench=N → WVB2 mount_ns+exec_ns for volume wires\n"
                "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/…/MCG1→WVFO\n"
                "       WDB1→WDBO | WVN1→WVNO (Dense NormalBP)\n"
-               "       WRB1→WRBO | WRV1→WRVO (RMSNorm NormalBP)\n");
+               "       WRB1→WRBO | WRV1→WRVO (RMSNorm NormalBP)\n"
+               "       WLB1→WLBO | WLV1→WLVO (LayerNorm NormalBP)\n");
 }
 
 int main(int argc, char** argv) {
@@ -1377,6 +1378,12 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WRV1", 4) == 0) {
     return run_volume_rmsnorm_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "WLB1", 4) == 0) {
+    return run_layernorm_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "WLV1", 4) == 0) {
+    return run_volume_layernorm_normalbp(bench_iters);
   }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);

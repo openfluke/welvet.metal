@@ -20,8 +20,9 @@ for arg in "$@"; do
   case "$arg" in
     --dense-train) MODE="dense_train" ;;
     --rmsnorm-train) MODE="rmsnorm_train" ;;
+    --layernorm-train) MODE="layernorm_train" ;;
     --help|-h)
-      echo "usage: $0 [--dense-train|--rmsnorm-train]"
+      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
@@ -34,6 +35,10 @@ if [[ "$MODE" == "dense_train" ]]; then
 fi
 if [[ "$MODE" == "rmsnorm_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalRMSNormTrain$' -timeout 60m
+  exit 0
+fi
+if [[ "$MODE" == "layernorm_train" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalLayerNormTrain$' -timeout 60m
   exit 0
 fi
 

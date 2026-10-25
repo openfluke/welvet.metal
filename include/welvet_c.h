@@ -94,6 +94,16 @@ WELVET_API welvet_status welvet_layernorm_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,
     const float* gamma, const float* beta, const float* x, float* pre, float* post);
 
+/* LayerNorm NormalBP leaf: forward → (MSEGrad | grad_out) → backward → optional SGD.
+ * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE).
+ * Outputs: pre/post/dX [batch*seq*dim], dW [2*dim]=dγ|dβ, gamma_after/beta_after [dim], *loss.
+ */
+WELVET_API welvet_status welvet_layernorm_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,
+    const float* gamma_init, const float* beta_init, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW,
+    float* gamma_after, float* beta_after, double* loss);
+
 /* Softmax forward — WSM1 wire. All Kind variants; host stable Softmax (Go/cpp exact_bit). */
 WELVET_API welvet_status welvet_softmax_forward_f32(
     int32_t n, int32_t dim, int32_t seq_len, int32_t kind, int32_t rows, int32_t cols,
