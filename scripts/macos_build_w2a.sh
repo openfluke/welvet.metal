@@ -18,6 +18,7 @@ echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
 MODE=""
 for arg in "$@"; do
   case "$arg" in
+    --normalbp-all) MODE="normalbp_all" ;;
     --metal-only) MODE="metal_only" ;;
     --dense-train) MODE="dense_train" ;;
     --rmsnorm-train) MODE="rmsnorm_train" ;;
@@ -38,12 +39,20 @@ for arg in "$@"; do
     --stack-train) MODE="stack_train" ;;
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
-      echo "usage: $0 [--metal-only|--dense-train|…|--stack-train|--stepbp-train]"
+      echo "usage: $0 [--normalbp-all|--metal-only|--dense-train|…|--stack-train|--stepbp-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
   esac
 done
+
+if [[ "$MODE" == "normalbp_all" ]]; then
+  # Correctness first: all cases/dtypes with one measured iteration per fixture.
+  # Set WELVET_METAL_BENCH_ITERS=2000 for longer performance measurements.
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalNormalBP|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
 
 if [[ "$MODE" == "metal_only" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalOnly$' -timeout 10m

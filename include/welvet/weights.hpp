@@ -20,31 +20,31 @@ struct WeightStore {
   QuantFormat format = QuantFormat::None;
   int rows = 0;
   int cols = 0;
-  std::vector<float> f32;       // Float32 FormatNone payload
-  std::vector<uint8_t> native;  // other FormatNone dtypes
+  std::vector<float> f32;      // Float32 FormatNone payload
+  std::vector<uint8_t> native; // other FormatNone dtypes
   float scale = 1.0f;
   std::vector<double> bias;
 
-  static Status make(int rows, int cols, DType dt, const float* init_or_null, WeightStore* out);
-  static Status make_f32(int rows, int cols, const float* init_or_null, WeightStore* out) {
+  static Status make(int rows, int cols, DType dt, const float *init_or_null, WeightStore *out);
+  static Status make_f32(int rows, int cols, const float *init_or_null, WeightStore *out) {
     return make(rows, cols, DType::Float32, init_or_null, out);
   }
 
-  Status encode_format_none(DType dt, const float* scratch, int n);
-  Status decode_row_f64(int row, double* dst) const;
+  Status encode_format_none(DType dt, const float *scratch, int n);
+  Status decode_row_f64(int row, double *dst) const;
   // Decode full matrix to float32 (FormatNone).
-  Status export_f32(float* dst) const;
+  Status export_f32(float *dst) const;
 
   // Legacy host entry: returns Unsupported; use Metal Dense dispatch.
-  Status matvec_f32(const float* x, float* y) const;
+  Status matvec_f32(const float *x, float *y) const;
   // Legacy host entry: returns Unsupported; use Metal Dense backward.
-  Status matvect_f32(const float* gy, float* gx) const;
+  Status matvect_f32(const float *gy, float *gx) const;
 
-  // Metal SGD for Float32 FormatNone; other dtypes return Unsupported.
-  Status apply_sgd(const double* dW, double lr);
+  // Metal SGD plus native storage encoding for all FormatNone dtypes.
+  Status apply_sgd(const double *dW, double lr);
 
-  // Float64 bias SGD is Unsupported; empty bias remains a no-op.
-  Status apply_bias_sgd(const double* dB, int n, double lr);
+  // Metal float64 bias SGD via explicit software precision; empty bias is a no-op.
+  Status apply_bias_sgd(const double *dB, int n, double lr);
 };
 
 } // namespace welvet

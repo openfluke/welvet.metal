@@ -34,25 +34,25 @@ struct Config {
   uint32_t gumbel_seed = 0;          // 0 → fixed LCG; else seed
 };
 
-Status validate(Config* cfg);
+Status validate(Config *cfg);
 
 struct Layer {
   Config cfg{};
   DType dtype = DType::Float32; // harness only (weightless)
 };
 
-Status new_configured(const Config& cfg, DType dt, Layer* out);
+Status new_configured(const Config &cfg, DType dt, Layer *out);
 
 // pre/post both probabilities y (same values). Softmax over last axis or grid rows×cols.
-// Host f64 temperature + f32 stable Softmax/sparsemax/entmax (Go/cpp exact_bit).
-Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
+// Metal temperature scaling + stable Softmax/sparsemax/entmax.
+Status forward(const Layer &layer, const TensorF32 &input, TensorF32 *pre, TensorF32 *post);
 
 // dx = (y/T) ⊙ (dy − ⟨dy,y⟩); Masked zeros dy on masked positions. gradW always empty.
 // pre must be probabilities from forward.
-Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
-                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+Status backward_f32(const Layer &layer, const TensorF32 &grad_out, const TensorF32 &input,
+                    const TensorF32 &pre, TensorF32 *grad_in, TensorF32 *grad_w);
 
 // Weightless no-op. Accepts empty/nil dW.
-Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+Status apply_grad_sgd(Layer *layer, const TensorF32 &dW, double lr);
 
 } // namespace welvet::softmax

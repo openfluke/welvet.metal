@@ -1,6 +1,7 @@
+#include "welvet/float_codecs.hpp"
+#include "welvet/metal/layer_utils.hpp"
 #include "welvet/metal/training.hpp"
 #include "welvet/weights.hpp"
-#include "welvet/float_codecs.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -18,46 +19,54 @@ constexpr bool kHostInt64 = true;
 constexpr bool kHostInt64 = false;
 #endif
 
-float abs_max(const float* w, int n) {
+float abs_max(const float *w, int n) {
   float m = 0;
   for (int i = 0; i < n; ++i) {
     const float a = std::fabs(w[i]);
-    if (a > m) m = a;
+    if (a > m)
+      m = a;
   }
   return m;
 }
 
-void min_max(const float* w, int n, float* mn, float* mx) {
+void min_max(const float *w, int n, float *mn, float *mx) {
   *mn = *mx = w[0];
   for (int i = 1; i < n; ++i) {
-    if (w[i] < *mn) *mn = w[i];
-    if (w[i] > *mx) *mx = w[i];
+    if (w[i] < *mn)
+      *mn = w[i];
+    if (w[i] > *mx)
+      *mx = w[i];
   }
 }
 
 double clamp_i(double v, double lo, double hi) {
-  if (v < lo) return lo;
-  if (v > hi) return hi;
+  if (v < lo)
+    return lo;
+  if (v > hi)
+    return hi;
   return v;
 }
 
-void put_u16(std::vector<uint8_t>& b, size_t off, uint16_t v) {
+void put_u16(std::vector<uint8_t> &b, size_t off, uint16_t v) {
   b[off] = static_cast<uint8_t>(v & 0xff);
   b[off + 1] = static_cast<uint8_t>((v >> 8) & 0xff);
 }
-void put_u32(std::vector<uint8_t>& b, size_t off, uint32_t v) {
-  for (int i = 0; i < 4; ++i) b[off + i] = static_cast<uint8_t>((v >> (8 * i)) & 0xff);
+void put_u32(std::vector<uint8_t> &b, size_t off, uint32_t v) {
+  for (int i = 0; i < 4; ++i)
+    b[off + i] = static_cast<uint8_t>((v >> (8 * i)) & 0xff);
 }
-void put_u64(std::vector<uint8_t>& b, size_t off, uint64_t v) {
-  for (int i = 0; i < 8; ++i) b[off + i] = static_cast<uint8_t>((v >> (8 * i)) & 0xff);
+void put_u64(std::vector<uint8_t> &b, size_t off, uint64_t v) {
+  for (int i = 0; i < 8; ++i)
+    b[off + i] = static_cast<uint8_t>((v >> (8 * i)) & 0xff);
 }
-uint16_t get_u16(const uint8_t* p) { return uint16_t(p[0]) | (uint16_t(p[1]) << 8); }
-uint32_t get_u32(const uint8_t* p) {
+uint16_t get_u16(const uint8_t *p) { return uint16_t(p[0]) | (uint16_t(p[1]) << 8); }
+uint32_t get_u32(const uint8_t *p) {
   return uint32_t(p[0]) | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
 }
-uint64_t get_u64(const uint8_t* p) {
+uint64_t get_u64(const uint8_t *p) {
   uint64_t v = 0;
-  for (int i = 0; i < 8; ++i) v |= uint64_t(p[i]) << (8 * i);
+  for (int i = 0; i < 8; ++i)
+    v |= uint64_t(p[i]) << (8 * i);
   return v;
 }
 float bits_to_f32(uint32_t u) {
@@ -100,7 +109,7 @@ constexpr float kNf4[16] = {
     1.0f,
 };
 
-std::vector<uint8_t> pack_bit_codes(const std::vector<uint64_t>& codes, int bits) {
+std::vector<uint8_t> pack_bit_codes(const std::vector<uint64_t> &codes, int bits) {
   const int n = static_cast<int>(codes.size());
   const int total = n * bits;
   std::vector<uint8_t> b((total + 7) / 8, 0);
@@ -115,7 +124,7 @@ std::vector<uint8_t> pack_bit_codes(const std::vector<uint64_t>& codes, int bits
   return b;
 }
 
-uint64_t get_bit_code(const uint8_t* raw, int i, int bits) {
+uint64_t get_bit_code(const uint8_t *raw, int i, int bits) {
   const int bit_off = i * bits;
   uint64_t c = 0;
   for (int k = 0; k < bits; ++k) {
@@ -136,16 +145,19 @@ int64_t sign_extend(uint64_t code, int bits) {
   return static_cast<int64_t>(code);
 }
 
-Status pack_signed_nbit(const float* w, int n, int bits, std::vector<uint8_t>* out, float* scale) {
+Status pack_signed_nbit(const float *w, int n, int bits, std::vector<uint8_t> *out, float *scale) {
   const int max_q = (1 << (bits - 1)) - 1;
   const int min_q = -(1 << (bits - 1));
   float s = abs_max(w, n) / static_cast<float>(max_q);
-  if (s == 0) s = 1;
+  if (s == 0)
+    s = 1;
   std::vector<uint64_t> codes(n);
   for (int i = 0; i < n; ++i) {
     int q = static_cast<int>(std::round(w[i] / s));
-    if (q > max_q) q = max_q;
-    if (q < min_q) q = min_q;
+    if (q > max_q)
+      q = max_q;
+    if (q < min_q)
+      q = min_q;
     codes[i] = static_cast<uint64_t>(static_cast<unsigned>(q) & ((1u << bits) - 1));
   }
   *out = pack_bit_codes(codes, bits);
@@ -153,12 +165,14 @@ Status pack_signed_nbit(const float* w, int n, int bits, std::vector<uint8_t>* o
   return Status::Ok();
 }
 
-Status pack_unsigned_nbit(const float* w, int n, int bits, std::vector<uint8_t>* out, float* scale) {
+Status pack_unsigned_nbit(const float *w, int n, int bits, std::vector<uint8_t> *out,
+                          float *scale) {
   const int max_q = (1 << bits) - 1;
   float mn, mx;
   min_max(w, n, &mn, &mx);
   float span = mx - mn;
-  if (span == 0) span = 1;
+  if (span == 0)
+    span = 1;
   std::vector<uint64_t> codes(n);
   for (int i = 0; i < n; ++i) {
     int q = static_cast<int>(clamp_i(std::round((w[i] - mn) / span * max_q), 0, max_q));
@@ -172,47 +186,55 @@ Status pack_unsigned_nbit(const float* w, int n, int bits, std::vector<uint8_t>*
   return Status::Ok();
 }
 
-Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, float* scale) {
+Status pack_native(DType dt, const float *w, int n, std::vector<uint8_t> *out, float *scale) {
   out->clear();
   *scale = 1;
   switch (dt) {
   case DType::Float64: {
     out->resize(n * 8);
-    for (int i = 0; i < n; ++i) put_u64(*out, i * 8, f64_to_bits(static_cast<double>(w[i])));
+    for (int i = 0; i < n; ++i)
+      put_u64(*out, i * 8, f64_to_bits(static_cast<double>(w[i])));
     return Status::Ok();
   }
   case DType::Float16: {
     out->resize(n * 2);
-    for (int i = 0; i < n; ++i) put_u16(*out, i * 2, float32_to_float16(w[i]));
+    for (int i = 0; i < n; ++i)
+      put_u16(*out, i * 2, float32_to_float16(w[i]));
     return Status::Ok();
   }
   case DType::BFloat16: {
     out->resize(n * 2);
-    for (int i = 0; i < n; ++i) put_u16(*out, i * 2, float32_to_bfloat16(w[i]));
+    for (int i = 0; i < n; ++i)
+      put_u16(*out, i * 2, float32_to_bfloat16(w[i]));
     return Status::Ok();
   }
   case DType::FP8E4M3: {
     out->resize(n);
-    for (int i = 0; i < n; ++i) (*out)[i] = float32_to_fp8e4m3(w[i]);
+    for (int i = 0; i < n; ++i)
+      (*out)[i] = float32_to_fp8e4m3(w[i]);
     return Status::Ok();
   }
   case DType::FP8E5M2: {
     out->resize(n);
-    for (int i = 0; i < n; ++i) (*out)[i] = float32_to_fp8e5m2(w[i]);
+    for (int i = 0; i < n; ++i)
+      (*out)[i] = float32_to_fp8e5m2(w[i]);
     return Status::Ok();
   }
   case DType::FP4: {
     out->assign((n + 1) / 2, 0);
     for (int i = 0; i < n; ++i) {
       const uint8_t code = float32_to_fp4(w[i]) & 0xF;
-      if (i % 2 == 0) (*out)[i / 2] = code;
-      else (*out)[i / 2] |= static_cast<uint8_t>(code << 4);
+      if (i % 2 == 0)
+        (*out)[i / 2] = code;
+      else
+        (*out)[i / 2] |= static_cast<uint8_t>(code << 4);
     }
     return Status::Ok();
   }
   case DType::Int64: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->resize(n * 8);
     for (int i = 0; i < n; ++i) {
       // Go: Round(float64(v/scale*1e6)) with float32 arithmetic first.
@@ -225,7 +247,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::Int32: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->resize(n * 4);
     for (int i = 0; i < n; ++i) {
       // Go: Round(float64(v/scale*2147483647)) with float32 arithmetic first
@@ -239,7 +262,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::Int16: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->resize(n * 2);
     for (int i = 0; i < n; ++i) {
       // Go: Round(float64(v/scale*32767)) with float32 arithmetic first.
@@ -252,7 +276,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::Int8: {
     float s = abs_max(w, n) / 127.0f;
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->resize(n);
     for (int i = 0; i < n; ++i) {
       const int q = static_cast<int>(clamp_i(std::round(w[i] / s), -128, 127));
@@ -268,15 +293,15 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
     float mn, mx;
     min_max(w, n, &mn, &mx);
     float span = mx - mn;
-    if (span == 0) span = 1;
+    if (span == 0)
+      span = 1;
     if (dt == DType::Uint8) {
       out->assign(4 + n, 0);
       put_u32(*out, 0, f32_to_bits(mn));
       for (int i = 0; i < n; ++i) {
         // Go: Round(float64((v-min)/span*255)) with float32 arithmetic first.
         const float qf = (w[i] - mn) / span * 255.0f;
-        (*out)[4 + i] =
-            static_cast<uint8_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 255));
+        (*out)[4 + i] = static_cast<uint8_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 255));
       }
       *scale = span / 255.0f;
     } else if (dt == DType::Uint16) {
@@ -296,8 +321,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
       const float maxu_f = static_cast<float>(4294967295u);
       for (int i = 0; i < n; ++i) {
         const float qf = (w[i] - mn) / span * maxu_f;
-        const uint32_t q = static_cast<uint32_t>(
-            clamp_i(std::round(static_cast<double>(qf)), 0, 4294967295.0));
+        const uint32_t q =
+            static_cast<uint32_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 4294967295.0));
         put_u32(*out, 4 + i * 4, q);
       }
       *scale = span / maxu_f;
@@ -306,7 +331,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
       put_u32(*out, 0, f32_to_bits(mn));
       for (int i = 0; i < n; ++i) {
         const float qf = (w[i] - mn) / span * 1e15f; // Go float32 intermediate
-        const uint64_t q = static_cast<uint64_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 1e15));
+        const uint64_t q =
+            static_cast<uint64_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 1e15));
         put_u64(*out, 4 + i * 8, q);
       }
       *scale = span / 1e15f;
@@ -315,12 +341,15 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::Int4: {
     float s = abs_max(w, n) / 7.0f;
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->assign((n + 1) / 2, 0);
     for (int i = 0; i < n; ++i) {
       const int q = static_cast<int>(clamp_i(std::round(w[i] / s), -8, 7)) & 0xF;
-      if (i % 2 == 0) (*out)[i / 2] = static_cast<uint8_t>(q);
-      else (*out)[i / 2] |= static_cast<uint8_t>(q << 4);
+      if (i % 2 == 0)
+        (*out)[i / 2] = static_cast<uint8_t>(q);
+      else
+        (*out)[i / 2] |= static_cast<uint8_t>(q << 4);
     }
     *scale = s;
     return Status::Ok();
@@ -329,21 +358,25 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
     float mn, mx;
     min_max(w, n, &mn, &mx);
     float span = mx - mn;
-    if (span == 0) span = 1;
+    if (span == 0)
+      span = 1;
     out->assign(4 + (n + 1) / 2, 0);
     put_u32(*out, 0, f32_to_bits(mn));
     for (int i = 0; i < n; ++i) {
       const float qf = (w[i] - mn) / span * 15.0f;
       const int q = static_cast<int>(clamp_i(std::round(static_cast<double>(qf)), 0, 15)) & 0xF;
-      if (i % 2 == 0) (*out)[4 + i / 2] = static_cast<uint8_t>(q);
-      else (*out)[4 + i / 2] |= static_cast<uint8_t>(q << 4);
+      if (i % 2 == 0)
+        (*out)[4 + i / 2] = static_cast<uint8_t>(q);
+      else
+        (*out)[4 + i / 2] |= static_cast<uint8_t>(q << 4);
     }
     *scale = span / 15.0f;
     return Status::Ok();
   }
   case DType::Int2: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->assign((n + 3) / 4, 0);
     for (int i = 0; i < n; ++i) {
       const int q = static_cast<int>(clamp_i(std::round(w[i] / s), -2, 1));
@@ -357,7 +390,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
     float mn, mx;
     min_max(w, n, &mn, &mx);
     float span = mx - mn;
-    if (span == 0) span = 1;
+    if (span == 0)
+      span = 1;
     out->assign(4 + (n + 3) / 4, 0);
     put_u32(*out, 0, f32_to_bits(mn));
     for (int i = 0; i < n; ++i) {
@@ -369,13 +403,16 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::Ternary: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->assign((n + 3) / 4, 0);
     for (int i = 0; i < n; ++i) {
       const float r = w[i] / s;
       int code = 1;
-      if (r > 0.5f) code = 2;
-      else if (r < -0.5f) code = 0;
+      if (r > 0.5f)
+        code = 2;
+      else if (r < -0.5f)
+        code = 0;
       (*out)[i / 4] |= static_cast<uint8_t>(code << ((i % 4) * 2));
     }
     *scale = s;
@@ -383,17 +420,20 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::Binary: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->assign((n + 7) / 8, 0);
     for (int i = 0; i < n; ++i) {
-      if (w[i] >= 0) (*out)[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
+      if (w[i] >= 0)
+        (*out)[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
     }
     *scale = s;
     return Status::Ok();
   }
   case DType::Int: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     if (kHostInt64) {
       out->resize(n * 8);
       for (int i = 0; i < n; ++i) {
@@ -418,13 +458,15 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
     float mn, mx;
     min_max(w, n, &mn, &mx);
     float span = mx - mn;
-    if (span == 0) span = 1;
+    if (span == 0)
+      span = 1;
     if (kHostInt64) {
       out->assign(4 + n * 8, 0);
       put_u32(*out, 0, f32_to_bits(mn));
       for (int i = 0; i < n; ++i) {
         const float qf = (w[i] - mn) / span * 1e15f;
-        const uint64_t q = static_cast<uint64_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 1e15));
+        const uint64_t q =
+            static_cast<uint64_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 1e15));
         put_u64(*out, 4 + i * 8, q);
       }
       *scale = span / 1e15f;
@@ -433,7 +475,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
       put_u32(*out, 0, f32_to_bits(mn));
       const double maxu = 4294967295.0;
       for (int i = 0; i < n; ++i) {
-        const uint32_t q = static_cast<uint32_t>(clamp_i(std::round((w[i] - mn) / span * maxu), 0, maxu));
+        const uint32_t q =
+            static_cast<uint32_t>(clamp_i(std::round((w[i] - mn) / span * maxu), 0, maxu));
         put_u32(*out, 4 + i * 4, q);
       }
       *scale = span / static_cast<float>(maxu);
@@ -444,12 +487,14 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
     float mn, mx;
     min_max(w, n, &mn, &mx);
     float span = mx - mn;
-    if (span == 0) span = 1;
+    if (span == 0)
+      span = 1;
     out->assign(4 + n * 8, 0);
     put_u32(*out, 0, f32_to_bits(mn));
     for (int i = 0; i < n; ++i) {
       const float qf = (w[i] - mn) / span * 1e15f;
-      const uint64_t q = static_cast<uint64_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 1e15));
+      const uint64_t q =
+          static_cast<uint64_t>(clamp_i(std::round(static_cast<double>(qf)), 0, 1e15));
       put_u64(*out, 4 + i * 8, q);
     }
     *scale = span / 1e15f;
@@ -473,7 +518,8 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   }
   case DType::NF4: {
     float s = abs_max(w, n);
-    if (s == 0) s = 1;
+    if (s == 0)
+      s = 1;
     out->assign((n + 1) / 2, 0);
     for (int i = 0; i < n; ++i) {
       const float r = w[i] / s;
@@ -486,8 +532,10 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
           best = c;
         }
       }
-      if (i % 2 == 0) (*out)[i / 2] = static_cast<uint8_t>(best & 0xF);
-      else (*out)[i / 2] |= static_cast<uint8_t>((best & 0xF) << 4);
+      if (i % 2 == 0)
+        (*out)[i / 2] = static_cast<uint8_t>(best & 0xF);
+      else
+        (*out)[i / 2] |= static_cast<uint8_t>((best & 0xF) << 4);
     }
     *scale = s;
     return Status::Ok();
@@ -511,169 +559,203 @@ Status pack_native(DType dt, const float* w, int n, std::vector<uint8_t>* out, f
   return Status::Gap(std::string("pack_native ") + std::string(dtype_name(dt)));
 }
 
-Status weight_at(const WeightStore& s, int i, int n, float* out) {
+Status weight_at(const WeightStore &s, int i, int n, float *out) {
   float scale = s.scale;
-  if (scale == 0) scale = 1;
-  const uint8_t* raw = s.native.data();
+  if (scale == 0)
+    scale = 1;
+  const uint8_t *raw = s.native.data();
   const int raw_n = static_cast<int>(s.native.size());
   switch (s.dtype) {
   case DType::Float64: {
-    if (raw_n < n * 8) return Status::Err(StatusCode::InvalidArgument, "float64 short");
+    if (raw_n < n * 8)
+      return Status::Err(StatusCode::InvalidArgument, "float64 short");
     *out = static_cast<float>(bits_to_f64(get_u64(raw + i * 8)));
     return Status::Ok();
   }
   case DType::Float16: {
-    if (raw_n < n * 2) return Status::Err(StatusCode::InvalidArgument, "float16 short");
+    if (raw_n < n * 2)
+      return Status::Err(StatusCode::InvalidArgument, "float16 short");
     *out = float16_to_float32(get_u16(raw + i * 2));
     return Status::Ok();
   }
   case DType::BFloat16: {
-    if (raw_n < n * 2) return Status::Err(StatusCode::InvalidArgument, "bfloat16 short");
+    if (raw_n < n * 2)
+      return Status::Err(StatusCode::InvalidArgument, "bfloat16 short");
     *out = bfloat16_to_float32(get_u16(raw + i * 2));
     return Status::Ok();
   }
   case DType::FP8E4M3: {
-    if (raw_n < n) return Status::Err(StatusCode::InvalidArgument, "fp8e4m3 short");
+    if (raw_n < n)
+      return Status::Err(StatusCode::InvalidArgument, "fp8e4m3 short");
     *out = fp8e4m3_to_float32(raw[i]);
     return Status::Ok();
   }
   case DType::FP8E5M2: {
-    if (raw_n < n) return Status::Err(StatusCode::InvalidArgument, "fp8e5m2 short");
+    if (raw_n < n)
+      return Status::Err(StatusCode::InvalidArgument, "fp8e5m2 short");
     *out = fp8e5m2_to_float32(raw[i]);
     return Status::Ok();
   }
   case DType::FP4: {
-    if (raw_n < (n + 1) / 2) return Status::Err(StatusCode::InvalidArgument, "fp4 short");
+    if (raw_n < (n + 1) / 2)
+      return Status::Err(StatusCode::InvalidArgument, "fp4 short");
     uint8_t code = (i % 2 == 0) ? (raw[i / 2] & 0xF) : (raw[i / 2] >> 4);
     *out = fp4_to_float32(code);
     return Status::Ok();
   }
   case DType::Int64: {
-    if (raw_n < n * 8) return Status::Err(StatusCode::InvalidArgument, "int64 short");
+    if (raw_n < n * 8)
+      return Status::Err(StatusCode::InvalidArgument, "int64 short");
     *out = static_cast<float>(static_cast<int64_t>(get_u64(raw + i * 8))) * scale;
     return Status::Ok();
   }
   case DType::Int32: {
-    if (raw_n < n * 4) return Status::Err(StatusCode::InvalidArgument, "int32 short");
+    if (raw_n < n * 4)
+      return Status::Err(StatusCode::InvalidArgument, "int32 short");
     *out = static_cast<float>(static_cast<int32_t>(get_u32(raw + i * 4))) * scale;
     return Status::Ok();
   }
   case DType::Int16: {
-    if (raw_n < n * 2) return Status::Err(StatusCode::InvalidArgument, "int16 short");
+    if (raw_n < n * 2)
+      return Status::Err(StatusCode::InvalidArgument, "int16 short");
     *out = static_cast<float>(static_cast<int16_t>(get_u16(raw + i * 2))) * scale;
     return Status::Ok();
   }
   case DType::Int8: {
-    if (raw_n < n) return Status::Err(StatusCode::InvalidArgument, "int8 short");
+    if (raw_n < n)
+      return Status::Err(StatusCode::InvalidArgument, "int8 short");
     *out = static_cast<float>(static_cast<int8_t>(raw[i])) * scale;
     return Status::Ok();
   }
   case DType::Uint8: {
-    if (raw_n < 4 + n) return Status::Err(StatusCode::InvalidArgument, "uint8 short");
+    if (raw_n < 4 + n)
+      return Status::Err(StatusCode::InvalidArgument, "uint8 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(raw[4 + i]) * scale + min_v;
     return Status::Ok();
   }
   case DType::Uint16: {
-    if (raw_n < 4 + n * 2) return Status::Err(StatusCode::InvalidArgument, "uint16 short");
+    if (raw_n < 4 + n * 2)
+      return Status::Err(StatusCode::InvalidArgument, "uint16 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_u16(raw + 4 + i * 2)) * scale + min_v;
     return Status::Ok();
   }
   case DType::Uint32: {
-    if (raw_n < 4 + n * 4) return Status::Err(StatusCode::InvalidArgument, "uint32 short");
+    if (raw_n < 4 + n * 4)
+      return Status::Err(StatusCode::InvalidArgument, "uint32 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_u32(raw + 4 + i * 4)) * scale + min_v;
     return Status::Ok();
   }
   case DType::Uint64: {
-    if (raw_n < 4 + n * 8) return Status::Err(StatusCode::InvalidArgument, "uint64 short");
+    if (raw_n < 4 + n * 8)
+      return Status::Err(StatusCode::InvalidArgument, "uint64 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_u64(raw + 4 + i * 8)) * scale + min_v;
     return Status::Ok();
   }
   case DType::Int4: {
-    if (raw_n < (n + 1) / 2) return Status::Err(StatusCode::InvalidArgument, "int4 short");
-    int8_t q = (i % 2 == 0) ? static_cast<int8_t>(raw[i / 2] & 0xF) : static_cast<int8_t>(raw[i / 2] >> 4);
-    if (q > 7) q = static_cast<int8_t>(q - 16);
+    if (raw_n < (n + 1) / 2)
+      return Status::Err(StatusCode::InvalidArgument, "int4 short");
+    int8_t q =
+        (i % 2 == 0) ? static_cast<int8_t>(raw[i / 2] & 0xF) : static_cast<int8_t>(raw[i / 2] >> 4);
+    if (q > 7)
+      q = static_cast<int8_t>(q - 16);
     *out = static_cast<float>(q) * scale;
     return Status::Ok();
   }
   case DType::Uint4: {
-    if (raw_n < 4 + (n + 1) / 2) return Status::Err(StatusCode::InvalidArgument, "uint4 short");
+    if (raw_n < 4 + (n + 1) / 2)
+      return Status::Err(StatusCode::InvalidArgument, "uint4 short");
     const float min_v = bits_to_f32(get_u32(raw));
-    const uint8_t* body = raw + 4;
+    const uint8_t *body = raw + 4;
     int q = (i % 2 == 0) ? (body[i / 2] & 0xF) : (body[i / 2] >> 4);
     *out = static_cast<float>(q) * scale + min_v;
     return Status::Ok();
   }
   case DType::Int2: {
-    if (raw_n < (n + 3) / 4) return Status::Err(StatusCode::InvalidArgument, "int2 short");
+    if (raw_n < (n + 3) / 4)
+      return Status::Err(StatusCode::InvalidArgument, "int2 short");
     const int code = (raw[i / 4] >> ((i % 4) * 2)) & 3;
     *out = static_cast<float>(code - 2) * scale;
     return Status::Ok();
   }
   case DType::Uint2: {
-    if (raw_n < 4 + (n + 3) / 4) return Status::Err(StatusCode::InvalidArgument, "uint2 short");
+    if (raw_n < 4 + (n + 3) / 4)
+      return Status::Err(StatusCode::InvalidArgument, "uint2 short");
     const float min_v = bits_to_f32(get_u32(raw));
-    const uint8_t* body = raw + 4;
+    const uint8_t *body = raw + 4;
     const int code = (body[i / 4] >> ((i % 4) * 2)) & 3;
     *out = static_cast<float>(code) * scale + min_v;
     return Status::Ok();
   }
   case DType::Ternary: {
-    if (raw_n < (n + 3) / 4) return Status::Err(StatusCode::InvalidArgument, "ternary short");
+    if (raw_n < (n + 3) / 4)
+      return Status::Err(StatusCode::InvalidArgument, "ternary short");
     const int code = (raw[i / 4] >> ((i % 4) * 2)) & 3;
-    if (code == 0) *out = -scale;
-    else if (code == 2) *out = scale;
-    else *out = 0;
+    if (code == 0)
+      *out = -scale;
+    else if (code == 2)
+      *out = scale;
+    else
+      *out = 0;
     return Status::Ok();
   }
   case DType::Binary: {
-    if (raw_n < (n + 7) / 8) return Status::Err(StatusCode::InvalidArgument, "binary short");
+    if (raw_n < (n + 7) / 8)
+      return Status::Err(StatusCode::InvalidArgument, "binary short");
     *out = (raw[i / 8] & (1u << (i % 8))) ? scale : -scale;
     return Status::Ok();
   }
   case DType::Int: {
     if (kHostInt64) {
-      if (raw_n < n * 8) return Status::Err(StatusCode::InvalidArgument, "int short");
+      if (raw_n < n * 8)
+        return Status::Err(StatusCode::InvalidArgument, "int short");
       *out = static_cast<float>(static_cast<int64_t>(get_u64(raw + i * 8))) * scale;
     } else {
-      if (raw_n < n * 4) return Status::Err(StatusCode::InvalidArgument, "int short");
+      if (raw_n < n * 4)
+        return Status::Err(StatusCode::InvalidArgument, "int short");
       *out = static_cast<float>(static_cast<int32_t>(get_u32(raw + i * 4))) * scale;
     }
     return Status::Ok();
   }
   case DType::Uint: {
     if (kHostInt64) {
-      if (raw_n < 4 + n * 8) return Status::Err(StatusCode::InvalidArgument, "uint short");
+      if (raw_n < 4 + n * 8)
+        return Status::Err(StatusCode::InvalidArgument, "uint short");
       const float min_v = bits_to_f32(get_u32(raw));
       *out = static_cast<float>(get_u64(raw + 4 + i * 8)) * scale + min_v;
     } else {
-      if (raw_n < 4 + n * 4) return Status::Err(StatusCode::InvalidArgument, "uint short");
+      if (raw_n < 4 + n * 4)
+        return Status::Err(StatusCode::InvalidArgument, "uint short");
       const float min_v = bits_to_f32(get_u32(raw));
       *out = static_cast<float>(get_u32(raw + 4 + i * 4)) * scale + min_v;
     }
     return Status::Ok();
   }
   case DType::Uintptr: {
-    if (raw_n < 4 + n * 8) return Status::Err(StatusCode::InvalidArgument, "uintptr short");
+    if (raw_n < 4 + n * 8)
+      return Status::Err(StatusCode::InvalidArgument, "uintptr short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_u64(raw + 4 + i * 8)) * scale + min_v;
     return Status::Ok();
   }
   case DType::Complex64: {
-    if (raw_n < n * 8) return Status::Err(StatusCode::InvalidArgument, "complex64 short");
+    if (raw_n < n * 8)
+      return Status::Err(StatusCode::InvalidArgument, "complex64 short");
     *out = bits_to_f32(get_u32(raw + i * 8));
     return Status::Ok();
   }
   case DType::Complex128: {
-    if (raw_n < n * 16) return Status::Err(StatusCode::InvalidArgument, "complex128 short");
+    if (raw_n < n * 16)
+      return Status::Err(StatusCode::InvalidArgument, "complex128 short");
     *out = static_cast<float>(bits_to_f64(get_u64(raw + i * 16)));
     return Status::Ok();
   }
   case DType::NF4: {
-    if (raw_n < (n + 1) / 2) return Status::Err(StatusCode::InvalidArgument, "nf4 short");
+    if (raw_n < (n + 1) / 2)
+      return Status::Err(StatusCode::InvalidArgument, "nf4 short");
     int code = (i % 2 == 0) ? (raw[i / 2] & 0xF) : (raw[i / 2] >> 4);
     *out = kNf4[code] * scale;
     return Status::Ok();
@@ -681,39 +763,45 @@ Status weight_at(const WeightStore& s, int i, int n, float* out) {
   case DType::FP6:
   case DType::Int6: {
     const int need = (n * 6 + 7) / 8;
-    if (raw_n < need) return Status::Err(StatusCode::InvalidArgument, "int6/fp6 short");
+    if (raw_n < need)
+      return Status::Err(StatusCode::InvalidArgument, "int6/fp6 short");
     *out = static_cast<float>(sign_extend(get_bit_code(raw, i, 6), 6)) * scale;
     return Status::Ok();
   }
   case DType::Uint6: {
     const int need = 4 + (n * 6 + 7) / 8;
-    if (raw_n < need) return Status::Err(StatusCode::InvalidArgument, "uint6 short");
+    if (raw_n < need)
+      return Status::Err(StatusCode::InvalidArgument, "uint6 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_bit_code(raw + 4, i, 6)) * scale + min_v;
     return Status::Ok();
   }
   case DType::Int5: {
     const int need = (n * 5 + 7) / 8;
-    if (raw_n < need) return Status::Err(StatusCode::InvalidArgument, "int5 short");
+    if (raw_n < need)
+      return Status::Err(StatusCode::InvalidArgument, "int5 short");
     *out = static_cast<float>(sign_extend(get_bit_code(raw, i, 5), 5)) * scale;
     return Status::Ok();
   }
   case DType::Uint5: {
     const int need = 4 + (n * 5 + 7) / 8;
-    if (raw_n < need) return Status::Err(StatusCode::InvalidArgument, "uint5 short");
+    if (raw_n < need)
+      return Status::Err(StatusCode::InvalidArgument, "uint5 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_bit_code(raw + 4, i, 5)) * scale + min_v;
     return Status::Ok();
   }
   case DType::Int3: {
     const int need = (n * 3 + 7) / 8;
-    if (raw_n < need) return Status::Err(StatusCode::InvalidArgument, "int3 short");
+    if (raw_n < need)
+      return Status::Err(StatusCode::InvalidArgument, "int3 short");
     *out = static_cast<float>(sign_extend(get_bit_code(raw, i, 3), 3)) * scale;
     return Status::Ok();
   }
   case DType::Uint3: {
     const int need = 4 + (n * 3 + 7) / 8;
-    if (raw_n < need) return Status::Err(StatusCode::InvalidArgument, "uint3 short");
+    if (raw_n < need)
+      return Status::Err(StatusCode::InvalidArgument, "uint3 short");
     const float min_v = bits_to_f32(get_u32(raw));
     *out = static_cast<float>(get_bit_code(raw + 4, i, 3)) * scale + min_v;
     return Status::Ok();
@@ -728,7 +816,7 @@ Status weight_at(const WeightStore& s, int i, int n, float* out) {
 
 } // namespace
 
-Status WeightStore::encode_format_none(DType dt, const float* scratch, int n) {
+Status WeightStore::encode_format_none(DType dt, const float *scratch, int n) {
   if (!scratch || n != rows * cols) {
     return Status::Err(StatusCode::InvalidArgument, "encode: bad scratch");
   }
@@ -744,7 +832,7 @@ Status WeightStore::encode_format_none(DType dt, const float* scratch, int n) {
   return pack_native(dt, scratch, n, &native, &scale);
 }
 
-Status WeightStore::decode_row_f64(int row, double* dst) const {
+Status WeightStore::decode_row_f64(int row, double *dst) const {
   if (!dst || row < 0 || row >= rows) {
     return Status::Err(StatusCode::InvalidArgument, "decode_row shape");
   }
@@ -781,23 +869,63 @@ Status WeightStore::decode_row_f64(int row, double* dst) const {
   return Status::Ok();
 }
 
-Status WeightStore::apply_sgd(const double* dW, double lr) {
-  if (!dW || rows <= 0 || cols <= 0) {
-    return Status::Err(StatusCode::InvalidArgument, "weights: invalid SGD arguments");
+Status WeightStore::apply_sgd(const double *dW, double lr) {
+  if (!dW || rows <= 0 || cols <= 0 || !std::isfinite(lr))
+    return Status::Err(StatusCode::InvalidArgument, "weights: bad SGD arguments");
+  if (format != QuantFormat::None)
+    return Status::Err(StatusCode::Unsupported, "Metal SGD: packed quant unsupported");
+  const std::size_t n = static_cast<std::size_t>(rows) * cols;
+  if (n > static_cast<std::size_t>(std::numeric_limits<int32_t>::max()))
+    return Status::Err(StatusCode::InvalidArgument, "Metal SGD: tensor too large");
+  if (dtype == DType::Float32) {
+    if (f32.size() != n)
+      return Status::Err(StatusCode::InvalidArgument, "weights: f32 short");
+    return metal::sgd_f32_f64_grad(f32.data(), dW, n, lr);
   }
-  if (dtype != DType::Float32 || format != QuantFormat::None) {
-    return Status::Err(StatusCode::Unsupported,
-                       "weights: Metal SGD supports Float32 FormatNone only; CPU execution is forbidden");
+  if (native.empty() || (dtype == DType::Float64 && native.size() != n * 8))
+    return Status::Err(StatusCode::InvalidArgument, "weights: native payload shape");
+  std::vector<float> grad(n * 2), status(1);
+  for (std::size_t i = 0; i < n; ++i) {
+    if (!std::isfinite(dW[i]))
+      return Status::Err(StatusCode::InvalidArgument, "weights: nonfinite gradient");
+    metal::split_double(dW[i], &grad[2 * i], &grad[2 * i + 1]);
   }
-  const auto n = static_cast<std::size_t>(rows) * cols;
-  if (f32.size() != n) return Status::Err(StatusCode::InvalidArgument, "weights: f32 size");
-  return metal::sgd_f32_f64_grad(f32.data(), dW, n, lr);
+  float hi, lo;
+  metal::split_double(lr, &hi, &lo);
+  auto updated = native;
+  if (auto st = metal::run("op_native_sgd",
+                           {{updated.data(), updated.data(), updated.size()},
+                            metal::read(grad),
+                            metal::write(status)},
+                           {int(dtype), int(n), int(native.size())}, {scale, hi, lo});
+      !st)
+    return st;
+  if (status[0] != 0)
+    return Status::Err(StatusCode::InvalidArgument, "Metal SGD: invalid native payload");
+  native = std::move(updated);
+  f32.clear();
+  return Status::Ok();
 }
 
-Status WeightStore::apply_bias_sgd(const double* dB, int n, double lr) {
-  if (bias.empty()) return Status::Ok();
-  return Status::Err(StatusCode::Unsupported,
-                     "weights: Metal float64 bias SGD not implemented; CPU execution is forbidden");
+Status WeightStore::apply_bias_sgd(const double *dB, int n, double lr) {
+  if (bias.empty())
+    return Status::Ok();
+  if (!dB || n < int(bias.size()) || !std::isfinite(lr))
+    return Status::Err(StatusCode::InvalidArgument, "bias SGD shape/rate");
+  std::vector<float> grad(bias.size() * 2);
+  for (std::size_t i = 0; i < bias.size(); ++i)
+    metal::split_double(dB[i], &grad[2 * i], &grad[2 * i + 1]);
+  auto updated = bias;
+  float hi, lo;
+  metal::split_double(lr, &hi, &lo);
+  if (auto st = metal::run(
+          "op_bias_sgd",
+          {{updated.data(), updated.data(), updated.size() * sizeof(double)}, metal::read(grad)},
+          {int(bias.size())}, {hi, lo}, bias.size());
+      !st)
+    return st;
+  bias = std::move(updated);
+  return Status::Ok();
 }
 
 } // namespace welvet

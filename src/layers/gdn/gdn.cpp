@@ -1,4 +1,5 @@
 #include "welvet/gdn.hpp"
+#include "welvet/metal/layer_utils.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -6,64 +7,28 @@
 #include <vector>
 
 namespace welvet::gdn {
-namespace {
 
-// Match Go l2normBackward (float64 round-trip on sum).
+int key_dim(const Config &cfg) { return cfg.num_key_heads * cfg.key_head_dim; }
 
-struct Scratch {
-  std::vector<float> qkv, z, beta_raw, a_raw;
-  std::vector<float> mixed, q_rep, k_rep;
-  std::vector<float> beta, g, core;
-  std::vector<float> kv_mem, delta;
-  std::vector<float> conv_state, state;
-};
+int value_dim(const Config &cfg) { return cfg.num_value_heads * cfg.value_head_dim; }
 
-struct GdnStep {
-  std::vector<float> x;                 // H
-  std::vector<float> qkv;               // convDim
-  std::vector<float> conv_hist;         // convDim*(k-1)
-  std::vector<float> acc;               // convDim
-  std::vector<float> mixed;             // convDim
-  std::vector<float> q_inv, k_inv;      // nk
-  std::vector<float> q_rep, k_rep;      // nh*hdK
-  std::vector<float> beta_raw, a_raw;   // nh
-  std::vector<float> beta, g;           // nh
-  std::vector<float> state_old;         // nh*hdK*hdV
-  std::vector<float> state_after_decay; // nh*hdK*hdV
-  std::vector<float> kv_mem;            // valDim
-  std::vector<float> delta;             // valDim
-  std::vector<float> core_pre;          // valDim
-  std::vector<float> z;                 // valDim
-  std::vector<float> core_normed;       // valDim
-};
+int conv_dim(const Config &cfg) { return key_dim(cfg) * 2 + value_dim(cfg); }
 
-struct GdnGrads {
-  std::vector<float> d_in_qkv, d_in_z, d_in_b, d_in_a, d_out;
-  std::vector<float> d_conv_weight, d_a_log, d_dt_bias, d_norm_gamma;
-};
-
-// Mirrors ForwardDecode while recording tape for truncated-BPTT (Go forwardDecodeTape).
-
-} // namespace
-
-int key_dim(const Config& cfg) { return cfg.num_key_heads * cfg.key_head_dim; }
-
-int value_dim(const Config& cfg) { return cfg.num_value_heads * cfg.value_head_dim; }
-
-int conv_dim(const Config& cfg) { return key_dim(cfg) * 2 + value_dim(cfg); }
-
-int weight_count(const Config& cfg) {
+int weight_count(const Config &cfg) {
   Config c = cfg;
-  if (c.conv_kernel < 1) c.conv_kernel = 4;
+  if (c.conv_kernel < 1)
+    c.conv_kernel = 4;
   const int cd = conv_dim(c);
   const int vd = value_dim(c);
   const int h = c.hidden_size;
   const int nh = c.num_value_heads;
-  return cd * h + vd * h + nh * h + nh * h + h * vd + cd * c.conv_kernel + nh + nh + c.value_head_dim;
+  return cd * h + vd * h + nh * h + nh * h + h * vd + cd * c.conv_kernel + nh + nh +
+         c.value_head_dim;
 }
 
-Status validate(Config* cfg) {
-  if (!cfg) return Status::Err(StatusCode::InvalidArgument, "gdn: nil config");
+Status validate(Config *cfg) {
+  if (!cfg)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: nil config");
   if (cfg->hidden_size <= 0 || cfg->num_key_heads <= 0 || cfg->num_value_heads <= 0) {
     return Status::Err(StatusCode::InvalidArgument, "gdn: need positive HiddenSize/heads");
   }
@@ -71,17 +36,22 @@ Status validate(Config* cfg) {
     return Status::Err(StatusCode::InvalidArgument, "gdn: need positive head dims");
   }
   if (cfg->num_value_heads % cfg->num_key_heads != 0) {
-    return Status::Err(StatusCode::InvalidArgument, "gdn: NumValueHeads must divide by NumKeyHeads");
+    return Status::Err(StatusCode::InvalidArgument,
+                       "gdn: NumValueHeads must divide by NumKeyHeads");
   }
-  if (cfg->conv_kernel < 1) cfg->conv_kernel = 4;
-  if (cfg->eps <= 0) cfg->eps = 1e-6;
+  if (cfg->conv_kernel < 1)
+    cfg->conv_kernel = 4;
+  if (cfg->eps <= 0)
+    cfg->eps = 1e-6;
   return Status::Ok();
 }
 
-Status new_configured(const Config& cfg_in, const float* packed_or_null, Layer* out) {
-  if (!out) return Status::Err(StatusCode::InvalidArgument, "gdn: nil out");
+Status new_configured(const Config &cfg_in, const float *packed_or_null, Layer *out) {
+  if (!out)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: nil out");
   Config cfg = cfg_in;
-  if (auto st = validate(&cfg); !st) return st;
+  if (auto st = validate(&cfg); !st)
+    return st;
 
   const int h = cfg.hidden_size;
   const int cd = conv_dim(cfg);
@@ -110,7 +80,7 @@ Status new_configured(const Config& cfg_in, const float* packed_or_null, Layer* 
   layer.norm_gamma.assign(static_cast<std::size_t>(hd_v), 1.0f);
 
   if (packed_or_null) {
-    const float* p = packed_or_null;
+    const float *p = packed_or_null;
     std::memcpy(layer.in_qkv.data(), p, static_cast<std::size_t>(n_qkv) * sizeof(float));
     p += n_qkv;
     std::memcpy(layer.in_z.data(), p, static_cast<std::size_t>(n_z) * sizeof(float));
@@ -134,32 +104,105 @@ Status new_configured(const Config& cfg_in, const float* packed_or_null, Layer* 
   return Status::Ok();
 }
 
-Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post) {
-  return Status::Err(StatusCode::Unsupported, "gdn.forward: Metal kernel not implemented; CPU execution is forbidden");
+Status forward(Layer &layer, const TensorF32 &input, TensorF32 *pre, TensorF32 *post) {
+  if (!pre || !post)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: nil output");
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st)
+    return st;
+  if (input.shape.size() != 3 || input.shape[2] != cfg.hidden_size || input.shape[0] <= 0 ||
+      input.shape[1] <= 0)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: input shape");
+  int B = int(input.shape[0]), T = int(input.shape[1]), H = cfg.hidden_size;
+  if (input.data.size() != static_cast<std::size_t>(B) * T * H)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: input data");
+  std::vector<float> packed(weight_count(cfg));
+  if (auto st = export_packed_f32(layer, packed.data()); !st)
+    return st;
+  std::size_t units = H + conv_dim(cfg) * (cfg.conv_kernel + 8) + value_dim(cfg) * 16 +
+                      cfg.num_value_heads * cfg.key_head_dim * (cfg.value_head_dim + 8) +
+                      cfg.num_value_heads * 16;
+  std::vector<float> scratch(units * (T + 1) * 16, 0), empty;
+  *pre = input;
+  std::vector<float> grads(weight_count(cfg), 0);
+  if (auto st = metal::run("op_gdn",
+                           {metal::read(input.data), metal::read(packed), metal::read(empty),
+                            metal::write(pre->data), metal::read(empty), metal::write(grads),
+                            metal::write(scratch)},
+                           {H, cfg.num_key_heads, cfg.num_value_heads, cfg.key_head_dim,
+                            cfg.value_head_dim, cfg.conv_kernel, B, T, 0},
+                           {float(cfg.eps)});
+      !st)
+    return st;
+  *post = *pre;
+  return Status::Ok();
 }
 
+int grad_w_size(const Layer &layer) { return weight_count(layer.cfg); }
 
-int grad_w_size(const Layer& layer) { return weight_count(layer.cfg); }
-
-Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
-                    const TensorF32& /*pre*/, TensorF32* grad_in, TensorF32* grad_w) {
-  return Status::Err(StatusCode::Unsupported, "gdn.backward_f32: Metal kernel not implemented; CPU execution is forbidden");
+Status backward_f32(Layer &layer, const TensorF32 &grad_out, const TensorF32 &input,
+                    const TensorF32 & /*pre*/, TensorF32 *grad_in, TensorF32 *grad_w) {
+  if (!grad_in || !grad_w)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: nil gradients");
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st)
+    return st;
+  if (input.shape.size() != 3 || input.shape[2] != cfg.hidden_size || input.shape[0] <= 0 ||
+      input.shape[1] <= 0)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: input shape");
+  int B = int(input.shape[0]), T = int(input.shape[1]), H = cfg.hidden_size;
+  if (input.data.size() != static_cast<std::size_t>(B) * T * H)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: input data");
+  std::vector<float> packed(weight_count(cfg));
+  if (auto st = export_packed_f32(layer, packed.data()); !st)
+    return st;
+  std::size_t units = H + conv_dim(cfg) * (cfg.conv_kernel + 8) + value_dim(cfg) * 16 +
+                      cfg.num_value_heads * cfg.key_head_dim * (cfg.value_head_dim + 8) +
+                      cfg.num_value_heads * 16;
+  std::vector<float> scratch(units * (T + 1) * 16, 0), empty;
+  if (grad_out.shape != input.shape || grad_out.data.size() != input.data.size())
+    return Status::Err(StatusCode::InvalidArgument, "gdn: gradient shape");
+  *grad_in = input;
+  *grad_w = TensorF32::zeros(1, weight_count(cfg));
+  return metal::run("op_gdn",
+                    {metal::read(input.data), metal::read(packed), metal::read(grad_out.data),
+                     metal::read(empty), metal::write(grad_in->data), metal::write(grad_w->data),
+                     metal::write(scratch)},
+                    {H, cfg.num_key_heads, cfg.num_value_heads, cfg.key_head_dim,
+                     cfg.value_head_dim, cfg.conv_kernel, B, T, 1},
+                    {float(cfg.eps)});
 }
 
-Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
-  return Status::Err(StatusCode::Unsupported, "gdn.apply_grad_sgd: Metal kernel not implemented; CPU execution is forbidden");
+Status apply_grad_sgd(Layer *layer, const TensorF32 &dW, double lr) {
+  if (!layer)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: nil layer");
+  if (dW.data.size() != static_cast<std::size_t>(weight_count(layer->cfg)))
+    return Status::Err(StatusCode::InvalidArgument, "gdn: gradient shape");
+  std::vector<float> packed(dW.data.size());
+  if (auto st = export_packed_f32(*layer, packed.data()); !st)
+    return st;
+  if (auto st = metal::run("op_gdn_sgd", {metal::write(packed), metal::read(dW.data)},
+                           {int(packed.size())}, {float(lr)}, packed.size());
+      !st)
+    return st;
+  Layer updated;
+  if (auto st = new_configured(layer->cfg, packed.data(), &updated); !st)
+    return st;
+  *layer = std::move(updated);
+  return Status::Ok();
 }
 
-Status export_packed_f32(const Layer& layer, float* dst) {
-  if (!dst) return Status::Err(StatusCode::InvalidArgument, "gdn: nil export dst");
-  const Config& c = layer.cfg;
+Status export_packed_f32(const Layer &layer, float *dst) {
+  if (!dst)
+    return Status::Err(StatusCode::InvalidArgument, "gdn: nil export dst");
+  const Config &c = layer.cfg;
   const int cd = conv_dim(c);
   const int vd = value_dim(c);
   const int nh = c.num_value_heads;
   const int h = c.hidden_size;
   const int k = c.conv_kernel < 1 ? 1 : c.conv_kernel;
   int off = 0;
-  auto put = [&](const std::vector<float>& w) {
+  auto put = [&](const std::vector<float> &w) {
     if (!w.empty()) {
       std::memcpy(dst + off, w.data(), w.size() * sizeof(float));
       off += static_cast<int>(w.size());

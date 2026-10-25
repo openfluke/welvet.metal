@@ -38,6 +38,7 @@ set(WELVET_CORE_SOURCES
   src/metal/library.mm
   src/metal/matvec.mm
   src/metal/training.mm
+  src/metal/ops.mm
   src/weights/store.cpp
   src/weights/native_codec.cpp
   src/layers/dense/dense.cpp
@@ -108,6 +109,12 @@ target_link_libraries(welvet_metal_obj
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/shaders/welvet_dense.metal")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/welvet_dense.metal" WELVET_METAL_SOURCE)
+file(GLOB WELVET_EXTRA_SHADERS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/shaders/ops_*.metal")
+foreach(SHADER IN LISTS WELVET_EXTRA_SHADERS)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHADER}")
+  file(READ "${SHADER}" SHADER_SOURCE)
+  string(APPEND WELVET_METAL_SOURCE "\n${SHADER_SOURCE}")
+endforeach()
 configure_file(cmake/embedded_shaders.hpp.in generated/embedded_shaders.hpp @ONLY)
 target_include_directories(welvet_metal_obj PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
