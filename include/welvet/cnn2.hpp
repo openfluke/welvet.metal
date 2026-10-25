@@ -35,4 +35,13 @@ Status new_configured(const Config& cfg, DType dt, const float* w_init, Layer* o
 // Forward: im2col → Dense → loom [batch,filters,outH,outW].
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+// NormalBP: loom→dense flat → Dense bwd → col2im. pre must be loom from forward.
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+Status export_weights_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::cnn2

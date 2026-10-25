@@ -94,7 +94,56 @@ void loom_from_dense(const std::vector<float>& flat, int batch, int filters, int
   }
 }
 
+TensorF32 dense_from_loom(const std::vector<float>& loom, int batch, int filters, int out_h_n,
+                          int out_w_n) {
+  const int sp = out_h_n * out_w_n;
+  TensorF32 out;
+  out.shape = {batch * sp, filters};
+  out.data.resize(static_cast<std::size_t>(batch * sp * filters));
+  for (int b = 0; b < batch; ++b) {
+    for (int oh = 0; oh < out_h_n; ++oh) {
+      for (int ow = 0; ow < out_w_n; ++ow) {
+        for (int f = 0; f < filters; ++f) {
+          out.data[static_cast<std::size_t>((b * sp + oh * out_w_n + ow) * filters + f)] =
+              loom[static_cast<std::size_t>(b * filters * sp + f * sp + oh * out_w_n + ow)];
+        }
+      }
+    }
+  }
+  return out;
+}
 
+TensorF32 col2im(const TensorF32& gx_col, const Layout& lay) {
+  const int cols = lay.in_c * lay.k * lay.k;
+  TensorF32 out;
+  out.shape = {lay.batch, lay.in_c, lay.in_h, lay.in_w};
+  out.data.assign(static_cast<std::size_t>(lay.batch * lay.in_c * lay.in_h * lay.in_w), 0.0f);
+  std::vector<double> acc(out.data.size(), 0.0);
+  for (int b = 0; b < lay.batch; ++b) {
+    for (int oh = 0; oh < lay.out_h; ++oh) {
+      for (int ow = 0; ow < lay.out_w; ++ow) {
+        const int base = (b * spatial_n(lay) + oh * lay.out_w + ow) * cols;
+        for (int ic = 0; ic < lay.in_c; ++ic) {
+          for (int kh = 0; kh < lay.k; ++kh) {
+            for (int kw = 0; kw < lay.k; ++kw) {
+              const int ih = oh * lay.stride + kh - lay.padding;
+              const int iw = ow * lay.stride + kw - lay.padding;
+              if (ih < 0 || ih >= lay.in_h || iw < 0 || iw >= lay.in_w) continue;
+              acc[static_cast<std::size_t>(b * lay.in_c * lay.in_h * lay.in_w +
+                                           ic * lay.in_h * lay.in_w + ih * lay.in_w + iw)] +=
+                  static_cast<double>(gx_col.data[static_cast<std::size_t>(
+                      base + ic * lay.k * lay.k + kh * lay.k + kw)]);
+            }
+          }
+        }
+      }
+    }
+  }
+  for (std::size_t i = 0; i < out.data.size(); ++i) {
+    out.data[i] = static_cast<float>(acc[i]);
+  }
+  return out;
+}
 
 } // namespace
 
@@ -166,6 +215,54 @@ Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* 
   loom_from_dense(pre_flat.data, lay.batch, lay.filters, lay.out_h, lay.out_w, pre);
   loom_from_dense(post_flat.data, lay.batch, lay.filters, lay.out_h, lay.out_w, post);
   return Status::Ok();
+}
+
+int grad_w_size(const Layer& layer) {
+  return layer.proj.weights.rows * layer.proj.weights.cols;
+}
+
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "cnn2: nil grad_in/grad_w");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+  layer.cfg = cfg;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg, input, &lay); !st) return st;
+
+  const int want_out = lay.batch * lay.filters * lay.out_h * lay.out_w;
+  if (static_cast<int>(grad_out.data.size()) < want_out ||
+      static_cast<int>(pre.data.size()) < want_out) {
+    return Status::Err(StatusCode::InvalidArgument, "cnn2: grad/pre short");
+  }
+
+  TensorF32 col = im2col(input, lay);
+  TensorF32 gy = dense_from_loom(grad_out.data, lay.batch, lay.filters, lay.out_h, lay.out_w);
+  TensorF32 pre_flat = dense_from_loom(pre.data, lay.batch, lay.filters, lay.out_h, lay.out_w);
+
+  layer.proj.activation = cfg.activation;
+
+  TensorF32 gx_col;
+  if (auto st = dense::backward_f32(layer.proj, gy, col, pre_flat, &gx_col, grad_w); !st) {
+    return Status::Err(st.code, std::string("cnn2 dense bwd: ") + st.message);
+  }
+  *grad_in = col2im(gx_col, lay);
+  return Status::Ok();
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "cnn2: ApplyGradSGD nil");
+  }
+  return dense::apply_grad_sgd(&layer->proj, dW, lr);
+}
+
+Status export_weights_f32(const Layer& layer, float* dst) {
+  if (!dst) return Status::Err(StatusCode::InvalidArgument, "cnn2: nil dst");
+  return layer.proj.weights.export_f32(dst);
 }
 
 } // namespace welvet::cnn2

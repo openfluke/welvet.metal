@@ -1413,6 +1413,24 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "WHV1", 4) == 0) {
     return run_volume_mha_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "C1B1", 4) == 0) {
+    return run_cnn1_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "C2B1", 4) == 0) {
+    return run_cnn2_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "C3B1", 4) == 0) {
+    return run_cnn3_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "C1V1", 4) == 0) {
+    return run_volume_cnn1_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "C2V1", 4) == 0) {
+    return run_volume_cnn2_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "C3V1", 4) == 0) {
+    return run_volume_cnn3_normalbp(bench_iters);
+  }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);
   }

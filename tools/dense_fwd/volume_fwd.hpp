@@ -51,3 +51,11 @@ int run_volume_embedding_normalbp(int bench_iters);   // WEV1 → WEVO (+ option
 // MHA NormalBP (training)
 int run_mha_normalbp(int bench_iters);                // WHB1 → WHBO (+ optional WVB1)
 int run_volume_mha_normalbp(int bench_iters);         // WHV1 → WHVO (+ optional WVB1)
+
+// CNN1/2/3 NormalBP (training)
+int run_cnn1_normalbp(int bench_iters);               // C1B1 → C1BO (+ optional WVB1)
+int run_cnn2_normalbp(int bench_iters);               // C2B1 → C2BO (+ optional WVB1)
+int run_cnn3_normalbp(int bench_iters);               // C3B1 → C3BO (+ optional WVB1)
+int run_volume_cnn1_normalbp(int bench_iters);        // C1V1 → C1VO (+ optional WVB1)
+int run_volume_cnn2_normalbp(int bench_iters);        // C2V1 → C2VO (+ optional WVB1)
+int run_volume_cnn3_normalbp(int bench_iters);        // C3V1 → C3VO (+ optional WVB1)
