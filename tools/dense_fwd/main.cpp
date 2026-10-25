@@ -9,6 +9,12 @@
 #include "welvet/gaps.hpp"
 #include "welvet/metal/device.hpp"
 #include "welvet_c.h"
+#include "welvet/architecture.hpp"
+#include "welvet/dense.hpp"
+#include "welvet/runtime/forward.hpp"
+#include "welvet/activate.hpp"
+#include "welvet/dtype.hpp"
+#include "volume_fwd.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -1243,15 +1249,13 @@ static int run_seqmix(int /*bench_iters*/) {
   return 0;
 }
 
+
 static void usage() {
   std::fprintf(stderr,
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
-               "  --bench=N\n"
-               "  stdin WVD3→WVO1 | WVM1→WVMO | WVS1→WVSO | WVR1→WVRO | WVL1→WVLO | WSM1→WSMO | "
-               "WEM1→WEMO | WSQ1→WSQO | WRE1→WREO | WSX1→WSXO | WVC1/2/3→WVCO | WVT1/2/3→WVTO | "
-               "WRN1→WRNO | WLS1→WLSO | WGD1→WGDO | WMB1→WMBO | WKM1→WKMO | WPL1→WPLO | "
-               "WMC1→WMCO\n");
+               "  --bench=N → WVB2 mount_ns+exec_ns for volume wires\n"
+               "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1→WVFO\n");
 }
 
 int main(int argc, char** argv) {
@@ -1359,6 +1363,27 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WMC1", 4) == 0) {
     return run_metacognition(bench_iters);
+  }
+  if (std::memcmp(magic, "WVF1", 4) == 0) {
+    return run_volume_dense_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WMV1", 4) == 0) {
+    return run_volume_mha_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WRF1", 4) == 0) {
+    return run_volume_rmsnorm_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WLF1", 4) == 0) {
+    return run_volume_layernorm_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WSF1", 4) == 0) {
+    return run_volume_softmax_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WPF1", 4) == 0) {
+    return run_volume_parallel_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WKF1", 4) == 0) {
+    return run_volume_kmeans_fwd(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;
