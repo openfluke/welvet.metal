@@ -32,4 +32,16 @@ Status new_configured(const Config& cfg, DType dt, Activation child_act, const f
 // Chains Metal dense::forward_f32 (soft-double FormatNone×34 exact_bit).
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+// NormalBP: recompute child tape; reverse Dense chain; gradW = concat child dWs.
+// Top-level pre unused (may be empty).
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+// Export loom pack Depth×[Dim×Dim] as f32.
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::sequential

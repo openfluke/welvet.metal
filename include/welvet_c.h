@@ -165,6 +165,14 @@ WELVET_API welvet_status welvet_sequential_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* Sequential NormalBP leaf. use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD.
+ * dW/W_after: loom Depth×[Dim×Dim]. */
+WELVET_API welvet_status welvet_sequential_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* Residual y=F(x)+x — WRE1 wire. packed: Depth×[Dim×Dim] Dense F, x: [batch*seq*dim]
  * (seq=1 → [batch*dim]). pre: last F child pre; post: skip-add. F via Metal soft-double Dense. */
 WELVET_API welvet_status welvet_residual_forward_f32(

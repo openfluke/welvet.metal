@@ -1461,6 +1461,12 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "LSV1", 4) == 0) {
     return run_volume_lstm_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "SQB1", 4) == 0) {
+    return run_sequential_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "SQV1", 4) == 0) {
+    return run_volume_sequential_normalbp(bench_iters);
+  }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);
   }
