@@ -1258,7 +1258,8 @@ static void usage() {
                "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/…/MCG1→WVFO\n"
                "       WDB1→WDBO | WVN1→WVNO (Dense NormalBP)\n"
                "       WRB1→WRBO | WRV1→WRVO (RMSNorm NormalBP)\n"
-               "       WLB1→WLBO | WLV1→WLVO (LayerNorm NormalBP)\n");
+               "       WLB1→WLBO | WLV1→WLVO (LayerNorm NormalBP)\n"
+               "       WSB1→WSBO | WSV1→WSVO (SwiGLU NormalBP)\n");
 }
 
 int main(int argc, char** argv) {
@@ -1384,6 +1385,12 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WLV1", 4) == 0) {
     return run_volume_layernorm_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "WSB1", 4) == 0) {
+    return run_swiglu_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "WSV1", 4) == 0) {
+    return run_volume_swiglu_normalbp(bench_iters);
   }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);

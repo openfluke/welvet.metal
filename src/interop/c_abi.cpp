@@ -256,6 +256,80 @@ welvet_status welvet_swiglu_forward_f32(int32_t batch, int32_t seq, int32_t inpu
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_swiglu_normalbp_f32(int32_t batch, int32_t seq, int32_t input_dim,
+                                         int32_t intermediate_dim, int32_t dtype, int32_t /*backend*/,
+                                         const float* Gate, const float* Up, const float* Down,
+                                         const float* x, const float* grad_or_target,
+                                         int32_t use_target, double lr, float* pre, float* post,
+                                         float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || input_dim <= 0 || intermediate_dim <= 0 || !Gate || !Up || !Down ||
+      !x || !grad_or_target || !pre || !post || !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "swiglu nbp: invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "swiglu nbp: bad dtype %d", dtype);
+    return st;
+  }
+
+  welvet::swiglu::Config cfg;
+  cfg.input_dim = input_dim;
+  cfg.intermediate_dim = intermediate_dim;
+
+  welvet::swiglu::Layer layer;
+  auto st = welvet::swiglu::new_configured(cfg, static_cast<welvet::DType>(dtype), Gate, Up, Down,
+                                           &layer);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 input;
+  if (seq == 1) {
+    input.shape = {batch, input_dim};
+  } else {
+    input.shape = {batch, seq, input_dim};
+  }
+  const std::size_t n = static_cast<std::size_t>(batch) * static_cast<std::size_t>(seq) *
+                        static_cast<std::size_t>(input_dim);
+  input.data.assign(x, x + n);
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::swiglu::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + n);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::swiglu::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::swiglu::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::swiglu::export_weights_f32(layer, W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 welvet_status welvet_rmsnorm_forward_f32(int32_t batch, int32_t seq, int32_t dim, double eps,
                                          int32_t dtype, int32_t /*backend*/, const float* gamma,
                                          const float* x, float* pre, float* post) {

@@ -35,3 +35,7 @@ int run_volume_rmsnorm_normalbp(int bench_iters);   // WRV1 → WRVO (+ optional
 // LayerNorm NormalBP (training)
 int run_layernorm_normalbp(int bench_iters);          // WLB1 → WLBO (+ optional WVB1)
 int run_volume_layernorm_normalbp(int bench_iters);   // WLV1 → WLVO (+ optional WVB1)
+
+// SwiGLU NormalBP (training)
+int run_swiglu_normalbp(int bench_iters);             // WSB1 → WSBO (+ optional WVB1)
+int run_volume_swiglu_normalbp(int bench_iters);      // WSV1 → WSVO (+ optional WVB1)

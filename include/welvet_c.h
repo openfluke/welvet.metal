@@ -75,6 +75,16 @@ WELVET_API welvet_status welvet_swiglu_forward_f32(
     int32_t backend, const float* Gate, const float* Up, const float* Down, const float* x,
     float* pre, float* post);
 
+/* SwiGLU NormalBP leaf: forward → (MSEGrad | grad_out) → backward → optional SGD.
+ * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE).
+ * Outputs: pre [batch*seq*inter], post/dX [batch*seq*in], dW/W_after = concat(Gate,Up,Down), *loss.
+ */
+WELVET_API welvet_status welvet_swiglu_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t input_dim, int32_t intermediate_dim, int32_t dtype,
+    int32_t backend, const float* Gate, const float* Up, const float* Down, const float* x,
+    const float* grad_or_target, int32_t use_target, double lr, float* pre, float* post, float* dX,
+    float* dW, float* W_after, double* loss);
+
 /* RMSNorm forward — WVR1 wire. γ FormatNone×34 + host f64 RMS (Go/cpp exact_bit). */
 WELVET_API welvet_status welvet_rmsnorm_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,

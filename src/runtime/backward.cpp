@@ -3,6 +3,7 @@
 #include "welvet/dense.hpp"
 #include "welvet/layernorm.hpp"
 #include "welvet/rmsnorm.hpp"
+#include "welvet/swiglu.hpp"
 
 #include <sstream>
 #include <utility>
@@ -21,9 +22,11 @@ Status cell(architecture::Cell& cell, const TensorF32& grad_out, const TensorF32
     return rmsnorm::backward_f32(cell.rmsnorm_op, grad_out, input, pre, grad_in, dW);
   case architecture::OpKind::LayerNorm:
     return layernorm::backward_f32(cell.layernorm_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::SwiGLU:
+    return swiglu::backward_f32(cell.swiglu_op, grad_out, input, pre, grad_in, dW);
   default:
     return Status::Gap(
-        "runtime.backward: cell Op not yet on Metal (Dense/RMSNorm/LayerNorm NormalBP first)");
+        "runtime.backward: cell Op not yet on Metal (Dense/RMSNorm/LayerNorm/SwiGLU NormalBP first)");
   }
 }
 
