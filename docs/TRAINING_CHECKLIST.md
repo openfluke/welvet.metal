@@ -21,7 +21,7 @@ Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the w
 
 **Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack volume-fwd still open (no `bind_stack`).
 
-**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--cnn-train` / `--convt-train` live; other flags land with each suite.
+**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--cnn-train` / `--convt-train` / `--rnn-train` live; other flags land with each suite.
 
 ---
 
@@ -175,10 +175,10 @@ Timing: same `--bench=N` / spd%Δ convention. BPTT via Dense IH/HH + tanh′; lo
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [ ] | exact_bit + speed |
-| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | in=hid chain |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [x] | exact_bit + speed |
+| 2 | Leaf ×34 | [x] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | in=hid chain |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (LSTM NormalBP) — sign-off evidence
 
@@ -456,7 +456,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | ConvT1 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
 | ConvT2 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
 | ConvT3 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
-| RNN | [ ] | [ ] | [ ] | |
+| RNN | [x] | [x] | [x] | `0.11-m2-rnn-nbp` |
 | LSTM | [ ] | [ ] | [ ] | |
 | Sequential | [ ] | [ ] | [ ] | |
 | Residual | [ ] | [ ] | [ ] | |
@@ -467,7 +467,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [ ] | [ ] | [ ] | |
 
-**Checkpoint:** `0.10-m2-convt-nbp` — Dense…ConvT3 NormalBP leaf+volume ×34 (resident Dense proj W; Softmax ≥loose/~strict); next RNN.
+**Checkpoint:** `0.11-m2-rnn-nbp` — Dense…RNN NormalBP leaf+volume ×34 (RNB1/RNV1 BPTT IH/HH+tanh′); next LSTM.
 
 ---
 
@@ -1343,6 +1343,7 @@ Ship: `runtime/line` `Credit::FamilyTweenSplitSparse` on pop (`apply_sparse_chil
 
 | Tag | Notes |
 |---|---|
+| `0.11-m2-rnn-nbp` | RNN NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`RNB1`/`RNV1`; BPTT Dense IH/HH + tanh′, loom dIH\|dHH\|dBias) |
 | `0.10-m2-convt-nbp` | ConvT1/2/3 NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`T1B1`/`T2B1`/`T3B1` + `T*V1`; scatter+act′+adjoint, no bias) |
 | `0.09-m2-cnn-nbp` | CNN1/2/3 NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`C1B1`/`C2B1`/`C3B1` + `C*V1`; im2col→Dense bwd→col2im) |
 | `0.08-m2-mha-nbp` | MHA NormalBP Go↔Metal: leaf DecoderCausal/GQA/Encoder + ×34 (W exact; dX/dW ≥strict) + volume 111/chain/×34/222/211×34 exact_bit (`WHB1`/`WHV1`; resident Q/K/V/O) |

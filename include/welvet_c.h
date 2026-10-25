@@ -265,6 +265,14 @@ WELVET_API welvet_status welvet_rnn_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* RNN NormalBP leaf. use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD.
+ * dW/W_after: loom pack [IH|HH|bias]. */
+WELVET_API welvet_status welvet_rnn_normalbp_f32(
+    int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* LSTM — WLS1 wire. packed 4×[IH|HH|bias]; Dense soft-double + host f64 gates. */
 WELVET_API welvet_status welvet_lstm_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,

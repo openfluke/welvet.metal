@@ -1449,6 +1449,12 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "T3V1", 4) == 0) {
     return run_volume_convt3_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "RNB1", 4) == 0) {
+    return run_rnn_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "RNV1", 4) == 0) {
+    return run_volume_rnn_normalbp(bench_iters);
+  }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);
   }

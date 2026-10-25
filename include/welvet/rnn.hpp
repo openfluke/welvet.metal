@@ -29,4 +29,15 @@ Status new_configured(const Config& cfg, DType dt, const float* packed_or_null, 
 // Forward: pre/post [batch,seq,hid]. h₀=0. h_t = tanh(IH(x_t)+HH(h_{t-1})).
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+// NormalBP BPTT: gradW loom [dIH | dHH | dBias]. pre = linear sums before tanh.
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+// Export loom pack [IH | HH | bias] as f32 (bias cast from f64).
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::rnn

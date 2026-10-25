@@ -11,6 +11,7 @@
 #include "welvet/layernorm.hpp"
 #include "welvet/mha.hpp"
 #include "welvet/rmsnorm.hpp"
+#include "welvet/rnn.hpp"
 #include "welvet/softmax.hpp"
 #include "welvet/swiglu.hpp"
 
@@ -117,9 +118,12 @@ Status sgd_dense(architecture::Grid& g, const forward::Result& fwd, const backwa
     case architecture::OpKind::ConvT3:
       st_a = convt3::apply_grad_sgd(&cell->convt3_op, *it->second, lr);
       break;
+    case architecture::OpKind::RNN:
+      st_a = rnn::apply_grad_sgd(&cell->rnn_op, *it->second, lr);
+      break;
     default:
       return Status::Gap(
-          "training: SGD cell Op not yet on Metal (Dense/…/CNN/ConvT NormalBP first)");
+          "training: SGD cell Op not yet on Metal (Dense/…/CNN/ConvT/RNN NormalBP first)");
     }
     if (!st_a) {
       return st_a;
