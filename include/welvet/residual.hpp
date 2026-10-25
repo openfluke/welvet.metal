@@ -32,4 +32,14 @@ Status new_configured(const Config& cfg, DType dt, Activation child_act, const f
 // F via Metal dense::forward_f32; skip-add via f64 round-trip (Go AsFloat64+FromFloat64).
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+// NormalBP: recompute F; reverse Dense chain; gradIn = g_F + g_y (f64 skip-add).
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::residual

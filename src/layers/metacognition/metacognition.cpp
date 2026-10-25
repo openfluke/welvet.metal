@@ -241,4 +241,69 @@ Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* 
   return Status::Ok();
 }
 
+int grad_w_size(const Layer& layer) { return layer.cfg.dim * layer.cfg.dim; }
+
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w) {
+  if (!grad_in || !grad_w) {
+    return Status::Err(StatusCode::InvalidArgument, "metacognition: nil grad out");
+  }
+  Config cfg = layer.cfg;
+  if (auto st = validate(&cfg); !st) return st;
+
+  Layout lay;
+  if (auto st = parse_layout(cfg.dim, input, &lay); !st) return st;
+  const int want = lay.batch * lay.seq * lay.dim;
+  if (static_cast<int>(grad_out.data.size()) < want) {
+    return Status::Err(StatusCode::InvalidArgument, "metacognition: gradOut short");
+  }
+
+  TensorF32 flat = flatten(input, lay);
+  TensorF32 gy = flatten(grad_out, lay);
+  if (layer.last_gate != 1.0 && layer.last_gate != 0.0) {
+    for (std::size_t i = 0; i < gy.data.size(); ++i) {
+      gy.data[i] =
+          static_cast<float>(static_cast<double>(gy.data[i]) * layer.last_gate);
+    }
+  }
+
+  TensorF32 pre_f;
+  bool have_pre = false;
+  if (!pre.data.empty() && static_cast<int>(pre.data.size()) >= want) {
+    Layout pre_lay;
+    if (parse_layout(cfg.dim, pre, &pre_lay)) {
+      pre_f = flatten(pre, pre_lay);
+      have_pre = true;
+    }
+  }
+  if (!have_pre) {
+    TensorF32 post_unused;
+    if (auto st = dense::forward_f32(layer.observed, flat, &pre_f, &post_unused); !st) {
+      return Status::Err(st.code, std::string("metacognition pre recompute: ") + st.message);
+    }
+  }
+
+  TensorF32 gx, dw;
+  if (auto st = dense::backward_f32(layer.observed, gy, flat, pre_f, &gx, &dw); !st) {
+    return Status::Err(st.code, std::string("metacognition observed bwd: ") + st.message);
+  }
+  *grad_in = unflatten(gx, lay);
+  *grad_w = std::move(dw);
+  return Status::Ok();
+}
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
+  if (!layer) {
+    return Status::Err(StatusCode::InvalidArgument, "metacognition: ApplyGradSGD nil");
+  }
+  return dense::apply_grad_sgd(&layer->observed, dW, lr);
+}
+
+Status export_packed_f32(const Layer& layer, float* dst) {
+  if (!dst) {
+    return Status::Err(StatusCode::InvalidArgument, "metacognition: nil dst");
+  }
+  return layer.observed.weights.export_f32(dst);
+}
+
 } // namespace welvet::metacognition

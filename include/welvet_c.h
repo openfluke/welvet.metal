@@ -179,6 +179,14 @@ WELVET_API welvet_status welvet_residual_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* Residual NormalBP leaf. use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD.
+ * dW/W_after: loom Depth×[Dim×Dim] (F children only). */
+WELVET_API welvet_status welvet_residual_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t depth, int32_t child_act, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* seqmix Kind name — WSX1 smoke. kind: 0=attention 1=ssm 2=linear_attn 3=conv_mix.
  * Writes NUL-terminated name into buf (max buf_len). */
 WELVET_API welvet_status welvet_seqmix_kind_name(int32_t kind, char* buf, int32_t buf_len);
@@ -307,6 +315,14 @@ WELVET_API welvet_status welvet_mamba_forward_f32(
     int32_t batch, int32_t seq, int32_t d_model, int32_t d_state, int32_t expand, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* Mamba NormalBP leaf. use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD.
+ * packed/dW/W_after: InProj|OutProj|ALog|DSkip. */
+WELVET_API welvet_status welvet_mamba_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t d_model, int32_t d_state, int32_t expand, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* KMeans soft assignment — WKM1 wire. Centers FormatNone×34 decode_row_f64 + host f64 softMax.
  * output_mode: 0=probabilities (K), 1=features (D). */
 WELVET_API welvet_status welvet_kmeans_forward_f32(
@@ -328,6 +344,13 @@ WELVET_API welvet_status welvet_parallel_forward_f32(
 WELVET_API welvet_status welvet_metacognition_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t dtype, int32_t backend, const float* packed,
     const float* x, float* pre, float* post);
+
+/* Metacognition NormalBP leaf. use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD.
+ * packed/dW/W_after: Observed [Dim×Dim]. */
+WELVET_API welvet_status welvet_metacognition_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t dtype, int32_t backend, const float* packed,
+    const float* x, const float* grad_or_target, int32_t use_target, double lr, float* pre,
+    float* post, float* dX, float* dW, float* W_after, double* loss);
 
 #ifdef __cplusplus
 }

@@ -60,4 +60,13 @@ Status new_configured(const Config& cfg, DType dt, const float* packed_or_null, 
 // Input [batch,dim] or [batch,seq,dim]. pre/post same outer shape.
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+int grad_w_size(const Layer& layer);
+
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::metacognition

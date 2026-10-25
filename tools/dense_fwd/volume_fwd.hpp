@@ -79,3 +79,15 @@ int run_volume_lstm_normalbp(int bench_iters);         // LSV1 → LSVO (+ optio
 // Sequential NormalBP (training)
 int run_sequential_normalbp(int bench_iters);          // SQB1 → SQBO (+ optional WVB1)
 int run_volume_sequential_normalbp(int bench_iters);   // SQV1 → SQVO (+ optional WVB1)
+
+// Residual NormalBP (training)
+int run_residual_normalbp(int bench_iters);          // REB1 → REBO (+ optional WVB1)
+int run_volume_residual_normalbp(int bench_iters);     // REV1 → REVO (+ optional WVB1)
+
+// Mamba NormalBP (training)
+int run_mamba_normalbp(int bench_iters);               // MBB1 → MBBO (+ optional WVB1)
+int run_volume_mamba_normalbp(int bench_iters);        // MBV1 → MBVO (+ optional WVB1)
+
+// Metacognition NormalBP (training)
+int run_metacognition_normalbp(int bench_iters);       // MCB1 → MCBO (+ optional WVB1)
+int run_volume_metacognition_normalbp(int bench_iters); // MCV1 → MCVO (+ optional WVB1)

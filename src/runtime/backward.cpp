@@ -14,6 +14,9 @@
 #include "welvet/rnn.hpp"
 #include "welvet/lstm.hpp"
 #include "welvet/sequential.hpp"
+#include "welvet/residual.hpp"
+#include "welvet/mamba.hpp"
+#include "welvet/metacognition.hpp"
 #include "welvet/softmax.hpp"
 #include "welvet/swiglu.hpp"
 
@@ -60,9 +63,15 @@ Status cell(architecture::Cell& cell, const TensorF32& grad_out, const TensorF32
     return lstm::backward_f32(cell.lstm_op, grad_out, input, pre, grad_in, dW);
   case architecture::OpKind::Sequential:
     return sequential::backward_f32(cell.sequential_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::Residual:
+    return residual::backward_f32(cell.residual_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::Mamba:
+    return mamba::backward_f32(cell.mamba_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::Metacognition:
+    return metacognition::backward_f32(cell.metacognition_op, grad_out, input, pre, grad_in, dW);
   default:
     return Status::Gap(
-        "runtime.backward: cell Op not yet on Metal (Dense/…/RNN/LSTM/Sequential NormalBP first)");
+        "runtime.backward: cell Op not yet on Metal (Dense/…/Sequential/Residual/Mamba/Meta NormalBP first)");
   }
 }
 

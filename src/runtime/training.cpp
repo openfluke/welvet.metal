@@ -14,6 +14,9 @@
 #include "welvet/rnn.hpp"
 #include "welvet/lstm.hpp"
 #include "welvet/sequential.hpp"
+#include "welvet/residual.hpp"
+#include "welvet/mamba.hpp"
+#include "welvet/metacognition.hpp"
 #include "welvet/softmax.hpp"
 #include "welvet/swiglu.hpp"
 
@@ -129,9 +132,18 @@ Status sgd_dense(architecture::Grid& g, const forward::Result& fwd, const backwa
     case architecture::OpKind::Sequential:
       st_a = sequential::apply_grad_sgd(&cell->sequential_op, *it->second, lr);
       break;
+    case architecture::OpKind::Residual:
+      st_a = residual::apply_grad_sgd(&cell->residual_op, *it->second, lr);
+      break;
+    case architecture::OpKind::Mamba:
+      st_a = mamba::apply_grad_sgd(&cell->mamba_op, *it->second, lr);
+      break;
+    case architecture::OpKind::Metacognition:
+      st_a = metacognition::apply_grad_sgd(&cell->metacognition_op, *it->second, lr);
+      break;
     default:
       return Status::Gap(
-          "training: SGD cell Op not yet on Metal (Dense/…/RNN/LSTM/Sequential NormalBP first)");
+          "training: SGD cell Op not yet on Metal (Dense/…/Sequential/Residual/Mamba/Meta NormalBP first)");
     }
     if (!st_a) {
       return st_a;

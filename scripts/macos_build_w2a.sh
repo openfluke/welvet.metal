@@ -30,8 +30,11 @@ for arg in "$@"; do
     --rnn-train) MODE="rnn_train" ;;
     --lstm-train) MODE="lstm_train" ;;
     --sequential-train) MODE="sequential_train" ;;
+    --residual-train) MODE="residual_train" ;;
+    --mamba-train) MODE="mamba_train" ;;
+    --metacognition-train) MODE="metacognition_train" ;;
     --help|-h)
-      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train|--swiglu-train|--softmax-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train]"
+      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train|--swiglu-train|--softmax-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train|--sequential-train|--residual-train|--mamba-train|--metacognition-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
@@ -84,6 +87,18 @@ if [[ "$MODE" == "lstm_train" ]]; then
 fi
 if [[ "$MODE" == "sequential_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalSequentialTrain$' -timeout 60m
+  exit 0
+fi
+if [[ "$MODE" == "residual_train" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalResidualTrain$' -timeout 60m
+  exit 0
+fi
+if [[ "$MODE" == "mamba_train" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalMambaTrain$' -timeout 60m
+  exit 0
+fi
+if [[ "$MODE" == "metacognition_train" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalMetacognitionTrain$' -timeout 60m
   exit 0
 fi
 
