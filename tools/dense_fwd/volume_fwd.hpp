@@ -98,4 +98,8 @@ int run_volume_gdn_normalbp(int bench_iters);          // GDV1 → GDVO (+ optio
 
 // Stack NestedStack-of-Dense NormalBP (training)
 int run_stack_normalbp(int bench_iters);               // STKB → STKO (+ optional WVB1)
+
+// Line StepBP + MeshBP FamilyBP (training)
+int run_stepbp(int bench_iters);                       // STB1 → STBO (+ optional WVB1)
+int run_meshbp(int bench_iters);                       // MBP1 → MBPO (+ optional WVB1)
 int run_volume_stack_normalbp(int bench_iters);        // STKV → STVO (+ optional WVB1)

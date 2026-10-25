@@ -68,6 +68,8 @@ set(WELVET_CORE_SOURCES
   src/runtime/forward.cpp
   src/runtime/backward.cpp
   src/runtime/training.cpp
+  src/runtime/line.cpp
+  src/runtime/step.cpp
   src/systems/tween.cpp
   src/gaps/registry.cpp
   src/interop/c_abi.cpp
@@ -132,7 +134,8 @@ set_target_properties(welvet PROPERTIES
 )
 
 if(WELVET_BUILD_TOOLS)
-  add_executable(welvet_dense_fwd tools/dense_fwd/main.cpp tools/dense_fwd/volume_fwd.cpp)
+  add_executable(welvet_dense_fwd tools/dense_fwd/main.cpp tools/dense_fwd/volume_fwd.cpp
+    tools/dense_fwd/stepbp_wires.cpp)
   target_link_libraries(welvet_dense_fwd PRIVATE welvet)
 endif()
 

@@ -120,8 +120,8 @@ const std::vector<Entry>& build() {
       {"train.normalbp.dense", "training",
        "MSE/MSEGrad + step_dense Dense…Sequential/Residual/Mamba/Meta NormalBP (…/REB1/MBB1/MCB1)",
        true},
-      {"runtime.step", "runtime", "gap? Line StepBP/StepTween* Metal", false},
-      {"runtime.mesh", "runtime", "gap? MeshBP/MeshTween* Metal", false},
+      {"runtime.step", "runtime", "Line StepBP FamilyBP (STB1); StepTween* gap", true},
+      {"runtime.mesh", "runtime", "MeshBP FamilyBP dense clock (MBP1); MeshTween* gap", true},
       {"train.modes.x29", "training", "gap? all 29 TrainModes + Freeze/Shadow/Adv/Memory", false},
       {"train.camsync", "training", "gap? CamSync / BlendStores Metal", false},
 

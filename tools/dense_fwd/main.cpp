@@ -1491,6 +1491,12 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "GDV1", 4) == 0) {
     return run_volume_gdn_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "STB1", 4) == 0) {
+    return run_stepbp(bench_iters);
+  }
+  if (std::memcmp(magic, "MBP1", 4) == 0) {
+    return run_meshbp(bench_iters);
+  }
   if (std::memcmp(magic, "STKB", 4) == 0) {
     return run_stack_normalbp(bench_iters);
   }
