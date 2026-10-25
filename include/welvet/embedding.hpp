@@ -31,4 +31,12 @@ Status new_configured(const Config& cfg, DType dt, Activation act, const float* 
 // Gather via decode_row_f64 (Go/cpp FormatNone×34 exact_bit).
 Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// Scatter gradOut into dW [vocab,emb] by token id; gradIn zeros (same shape as input).
+// Matches Go: no ActivateDeriv on scatter (Linear path is the signed NormalBP case).
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+// Apply dW via weights.ApplySGD (FormatNone native).
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 } // namespace welvet::embedding

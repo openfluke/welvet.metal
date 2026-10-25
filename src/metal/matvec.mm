@@ -264,6 +264,28 @@ Status resident_mount(ResidentDense* r, const float* W_xy, const float* bias_xy,
   return Status::Ok();
 }
 
+Status resident_reload_w(ResidentDense* r, const float* W_xy, const float* bias_xy, int32_t bias_len) {
+  if (!r || !r->buf_w || !W_xy) {
+    return Status::Err(StatusCode::InvalidArgument, "null resident reload");
+  }
+  if (bias_len < 0 || (bias_len > 0 && !bias_xy)) {
+    return Status::Err(StatusCode::InvalidArgument, "bad bias reload");
+  }
+  if (bias_len != r->bias_len) {
+    return Status::Err(StatusCode::InvalidArgument, "bias_len changed; remount required");
+  }
+  id<MTLBuffer> bufW = (__bridge id<MTLBuffer>)r->buf_w;
+  const NSUInteger w_bytes =
+      static_cast<NSUInteger>(r->rows) * static_cast<NSUInteger>(r->cols) * 2 * sizeof(float);
+  std::memcpy([bufW contents], W_xy, w_bytes);
+  if (bias_len > 0 && r->buf_bias) {
+    id<MTLBuffer> bufBias = (__bridge id<MTLBuffer>)r->buf_bias;
+    std::memcpy([bufBias contents], bias_xy,
+                static_cast<NSUInteger>(bias_len) * 2 * sizeof(float));
+  }
+  return Status::Ok();
+}
+
 Status resident_execute(ResidentDense* r, const float* x, float* pre, float* post) {
   if (!r || !r->buf_w || !x || !pre || !post) {
     return Status::Err(StatusCode::InvalidArgument, "null resident execute");

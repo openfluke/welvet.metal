@@ -1,7 +1,9 @@
 #include "welvet/runtime/backward.hpp"
 
 #include "welvet/dense.hpp"
+#include "welvet/embedding.hpp"
 #include "welvet/layernorm.hpp"
+#include "welvet/mha.hpp"
 #include "welvet/rmsnorm.hpp"
 #include "welvet/softmax.hpp"
 #include "welvet/swiglu.hpp"
@@ -27,10 +29,13 @@ Status cell(architecture::Cell& cell, const TensorF32& grad_out, const TensorF32
     return swiglu::backward_f32(cell.swiglu_op, grad_out, input, pre, grad_in, dW);
   case architecture::OpKind::Softmax:
     return softmax::backward_f32(cell.softmax_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::Embedding:
+    return embedding::backward_f32(cell.embedding_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::MHA:
+    return mha::backward_f32(cell.mha_op, grad_out, input, pre, grad_in, dW);
   default:
     return Status::Gap(
-        "runtime.backward: cell Op not yet on Metal (Dense/RMSNorm/LayerNorm/SwiGLU/Softmax "
-        "NormalBP first)");
+        "runtime.backward: cell Op not yet on Metal (Dense/…/Embedding/MHA NormalBP first)");
   }
 }
 

@@ -81,4 +81,18 @@ Status new_configured(const Config& cfg, DType dt, const float* q_init, const fl
 // pre = attn [batch,seq,q_dim]; post = O(attn) [batch,seq,d_model].
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// Concatenated Q+K+V+O weight gradient length (no biases).
+int grad_w_size(const Layer& layer);
+
+// NormalBP ModeSelf: recompute Q/K/V/O + attn Backward + RoPEᵀ; gradW = concat(dQ,dK,dV,dO).
+// pre must be attn from forward. Baseline: no dropout/QKNorm/cross.
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+// Apply concat dW (Q|K|V|O) via dense::apply_grad_sgd.
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+// Flatten Q|K|V|O into dst (length grad_w_size).
+Status export_weights_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::mha

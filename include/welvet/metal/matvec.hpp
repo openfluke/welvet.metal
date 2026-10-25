@@ -22,6 +22,7 @@ inline void split_double(double d, float* hi, float* lo) {
 }
 
 // ---- Resident GPU session (mount vs execute) ----
+// W/bias stay on Metal across forwards. Reload W after host SGD; export is caller's job.
 
 struct ResidentDense {
   void* buf_w = nullptr;    // id<MTLBuffer> float2 W[rows*cols]
@@ -38,6 +39,9 @@ struct ResidentDense {
 
 Status resident_mount(ResidentDense* r, const float* W_xy, const float* bias_xy, int32_t bias_len,
                       int32_t batch, int32_t rows, int32_t cols, Activation act);
+
+// Overwrite resident soft-double W (and optional bias) without reallocating buffers.
+Status resident_reload_w(ResidentDense* r, const float* W_xy, const float* bias_xy, int32_t bias_len);
 
 // Upload x, run matvec+bias_act in one command buffer, download pre/post.
 Status resident_execute(ResidentDense* r, const float* x, float* pre, float* post);

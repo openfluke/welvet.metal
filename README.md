@@ -552,14 +552,14 @@ Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ e
 
 | Capability | Status |
 |---|:---:|
-| Authoritative owner (host vs Metal generation) | ⬜ |
-| Upload once / reuse across fwd/bwd/update | ⬜ |
-| Preserve storage truth (no undeclared f32 master) | ⬜ |
-| Derived device layout cache + invalidation | ⬜ |
+| Authoritative owner (host vs Metal generation) | 🚧 FormatNone host + soft-double GPU mirror |
+| Upload once / reuse across fwd/bwd/update | ✅ Dense resident W (reload after SGD) |
+| Preserve storage truth (no undeclared f32 master) | ✅ FormatNone WeightStore |
+| Derived device layout cache + invalidation | ✅ invalidate_gpu after ApplyGradSGD |
 | Resident activations / tapes across adjacent layers | ⬜ |
-| Resident gradients + clear policy | ⬜ |
-| Resident update in declared storage semantics | ⬜ |
-| Host-update mode (export grads → refresh device) | ⬜ |
+| Resident gradients + clear policy | ⬜ host dX/dW for exact_bit |
+| Resident update in declared storage semantics | 🚧 SGD on FormatNone; GPU mirror reload |
+| Host-update mode (export grads → refresh device) | ✅ export on demand (leaf wire end) |
 | CamSync on resident stores | ⬜ |
 | Checkpoint/export for ENTITY flows | ⬜ |
 | Migration before device/plan change | ⬜ |

@@ -43,3 +43,11 @@ int run_volume_swiglu_normalbp(int bench_iters);      // WSV1 → WSVO (+ option
 // Softmax NormalBP (training)
 int run_softmax_normalbp(int bench_iters);            // WXB1 → WXBO (+ optional WVB1)
 int run_volume_softmax_normalbp(int bench_iters);     // WXV1 → WXVO (+ optional WVB1)
+
+// Embedding NormalBP (training)
+int run_embedding_normalbp(int bench_iters);          // WEB1 → WEBO (+ optional WVB1)
+int run_volume_embedding_normalbp(int bench_iters);   // WEV1 → WEVO (+ optional WVB1)
+
+// MHA NormalBP (training)
+int run_mha_normalbp(int bench_iters);                // WHB1 → WHBO (+ optional WVB1)
+int run_volume_mha_normalbp(int bench_iters);         // WHV1 → WHVO (+ optional WVB1)

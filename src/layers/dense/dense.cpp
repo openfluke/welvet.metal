@@ -7,33 +7,9 @@
 #include <vector>
 
 namespace welvet::dense {
+namespace {
 
-Status new_layer(int in_h, int out_h, Activation act, DType dt, const float* init_or_null,
-                 Layer* layer) {
-  if (!layer || in_h <= 0 || out_h <= 0) {
-    return Status::Err(StatusCode::InvalidArgument, "dense: bad dims");
-  }
-  if (!dtype_supported_metal_forward(dt)) {
-    return Status::Err(StatusCode::Unsupported,
-                       std::string("dense Metal FormatNone forward unsupported for dtype ") +
-                           std::string(dtype_name(dt)) +
-                           " (Go baseline; Metal soft-double path not validated for this dtype)");
-  }
-  layer->input_height = in_h;
-  layer->output_height = out_h;
-  layer->activation = act;
-  return WeightStore::make(out_h, in_h, dt, init_or_null, &layer->weights);
-}
-
-bool dtype_supported_metal_forward(DType dt) {
-  // All 34 FormatNone dtypes Go supports — Metal soft-double GEMV targets the same
-  // decode_row_f64 → f64-acc contract. If a dtype's encode/decode cannot match Go,
-  // WeightStore::make / decode fails or we mark it unsupported here later.
-  const int id = static_cast<int>(dt);
-  return id >= 0 && id < kNumDTypes;
-}
-
-static Status decode_W_softdouble(const WeightStore& W, std::vector<float>* out_xy) {
+Status decode_W_softdouble(const WeightStore& W, std::vector<float>* out_xy) {
   if (!out_xy) return Status::Err(StatusCode::InvalidArgument, "null W out");
   out_xy->resize(static_cast<std::size_t>(W.rows * W.cols) * 2);
   std::vector<double> row(static_cast<std::size_t>(W.cols));
@@ -50,6 +26,100 @@ static Status decode_W_softdouble(const WeightStore& W, std::vector<float>* out_
   return Status::Ok();
 }
 
+Status decode_bias_softdouble(const WeightStore& W, std::vector<float>* bias_xy) {
+  const int bl = static_cast<int>(W.bias.size());
+  if (bl <= 0) {
+    bias_xy->clear();
+    return Status::Ok();
+  }
+  bias_xy->resize(static_cast<std::size_t>(bl) * 2);
+  for (int i = 0; i < bl; ++i) {
+    float hi = 0, lo = 0;
+    welvet::metal::split_double(W.bias[static_cast<std::size_t>(i)], &hi, &lo);
+    (*bias_xy)[static_cast<std::size_t>(i) * 2] = hi;
+    (*bias_xy)[static_cast<std::size_t>(i) * 2 + 1] = lo;
+  }
+  return Status::Ok();
+}
+
+Status ensure_resident(const Layer& layer, int batch) {
+  if (batch <= 0) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: bad batch for resident");
+  }
+  if (auto st = welvet::metal::require_dense_compute(); !st) return st;
+
+  const int in = layer.input_height;
+  const int out = layer.output_height;
+  const int bias_len = static_cast<int>(layer.weights.bias.size());
+
+  const bool shape_ok = layer.gpu.buf_w && layer.gpu_batch == batch && layer.gpu.rows == out &&
+                        layer.gpu.cols == in && layer.gpu.bias_len == bias_len &&
+                        layer.gpu.act == layer.activation;
+
+  // Hot path: resident W already matches FormatNone truth.
+  if (layer.gpu_valid && shape_ok) {
+    return Status::Ok();
+  }
+
+  std::vector<float> W_xy;
+  if (auto st = decode_W_softdouble(layer.weights, &W_xy); !st) return st;
+  std::vector<float> bias_xy;
+  if (auto st = decode_bias_softdouble(layer.weights, &bias_xy); !st) return st;
+
+  if (!shape_ok) {
+    if (auto st = metal::resident_mount(&layer.gpu, W_xy.data(),
+                                        bias_len ? bias_xy.data() : nullptr, bias_len, batch, out,
+                                        in, layer.activation);
+        !st) {
+      layer.gpu_valid = false;
+      return st;
+    }
+  } else {
+    // Buffers exist; FormatNone changed (SGD / reset) — reload soft-double W only.
+    if (auto st = metal::resident_reload_w(&layer.gpu, W_xy.data(),
+                                           bias_len ? bias_xy.data() : nullptr, bias_len);
+        !st) {
+      layer.gpu_valid = false;
+      return st;
+    }
+  }
+  layer.gpu_batch = batch;
+  layer.gpu_valid = true;
+  return Status::Ok();
+}
+
+} // namespace
+
+Status new_layer(int in_h, int out_h, Activation act, DType dt, const float* init_or_null,
+                 Layer* layer) {
+  if (!layer || in_h <= 0 || out_h <= 0) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: bad dims");
+  }
+  if (!dtype_supported_metal_forward(dt)) {
+    return Status::Err(StatusCode::Unsupported,
+                       std::string("dense Metal FormatNone forward unsupported for dtype ") +
+                           std::string(dtype_name(dt)) +
+                           " (Go baseline; Metal soft-double path not validated for this dtype)");
+  }
+  metal::resident_release(&layer->gpu);
+  layer->gpu_valid = false;
+  layer->gpu_batch = -1;
+  layer->input_height = in_h;
+  layer->output_height = out_h;
+  layer->activation = act;
+  return WeightStore::make(out_h, in_h, dt, init_or_null, &layer->weights);
+}
+
+bool dtype_supported_metal_forward(DType dt) {
+  const int id = static_cast<int>(dt);
+  return id >= 0 && id < kNumDTypes;
+}
+
+Status sync_gpu_from_weights(const Layer& layer, int batch) {
+  layer.invalidate_gpu();
+  return ensure_resident(layer, batch);
+}
+
 Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post) {
   if (!pre || !post) {
     return Status::Err(StatusCode::InvalidArgument, "dense: nil out");
@@ -59,9 +129,6 @@ Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, T
                        std::string("dense Metal unsupported dtype ") +
                            std::string(dtype_name(layer.weights.dtype)));
   }
-  // Metal only — no host MatVec, no f32-acc substitute.
-  if (auto st = welvet::metal::require_dense_compute(); !st) return st;
-
   if (input.shape.size() < 2) {
     return Status::Err(StatusCode::InvalidArgument, "dense: input shape need [batch,in]");
   }
@@ -75,33 +142,12 @@ Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, T
     return Status::Err(StatusCode::InvalidArgument, "dense: weight shape mismatch");
   }
 
+  // Mount once / reload after invalidate. Valid mirror → upload x only.
+  if (auto st = ensure_resident(layer, batch); !st) return st;
+
   *pre = TensorF32::zeros(batch, out);
   *post = TensorF32::zeros(batch, out);
-
-  std::vector<float> W_xy;
-  if (auto st = decode_W_softdouble(layer.weights, &W_xy); !st) return st;
-
-  if (auto st = welvet::metal::dense_matvec_softdouble_batch(
-          W_xy.data(), input.data.data(), pre->data.data(), batch, out, in);
-      !st) {
-    return st;
-  }
-
-  std::vector<float> bias_xy;
-  const int bias_len = static_cast<int>(layer.weights.bias.size());
-  if (bias_len > 0) {
-    bias_xy.resize(static_cast<std::size_t>(bias_len) * 2);
-    for (int i = 0; i < bias_len; ++i) {
-      float hi = 0, lo = 0;
-      welvet::metal::split_double(layer.weights.bias[static_cast<std::size_t>(i)], &hi, &lo);
-      bias_xy[static_cast<std::size_t>(i) * 2] = hi;
-      bias_xy[static_cast<std::size_t>(i) * 2 + 1] = lo;
-    }
-  }
-
-  return welvet::metal::dense_bias_act(pre->data.data(), post->data.data(),
-                                       bias_len ? bias_xy.data() : nullptr, bias_len, batch, out,
-                                       layer.activation);
+  return metal::resident_execute(&layer.gpu, input.data.data(), pre->data.data(), post->data.data());
 }
 
 Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
@@ -135,6 +181,7 @@ Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF
   *grad_in = TensorF32::zeros(batch, in);
   *grad_w = TensorF32::zeros(out, in);
 
+  // Host MatVecT + outer — same order as Go FormatNone (exact_bit). Does not touch GPU W.
   for (int b = 0; b < batch; ++b) {
     const float* gy = d_pre.data() + static_cast<std::size_t>(b * out);
     float* gx = grad_in->data.data() + static_cast<std::size_t>(b * in);
@@ -165,7 +212,10 @@ Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
   for (int i = 0; i < n; ++i) {
     buf[static_cast<std::size_t>(i)] = static_cast<double>(dW.data[static_cast<std::size_t>(i)]);
   }
-  return layer->weights.apply_sgd(buf.data(), lr);
+  if (auto st = layer->weights.apply_sgd(buf.data(), lr); !st) return st;
+  // FormatNone truth moved; soft-double mirror must reload before next forward.
+  layer->invalidate_gpu();
+  return Status::Ok();
 }
 
 } // namespace welvet::dense

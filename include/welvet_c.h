@@ -69,6 +69,17 @@ WELVET_API welvet_status welvet_mha_forward_f32(
     const float* Q, const float* K, const float* V, const float* O, const float* x, float* pre,
     float* post);
 
+/* MHA NormalBP leaf (ModeSelf): forward → (MSEGrad | grad_out) → backward → optional SGD.
+ * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE).
+ * Outputs: pre [batch*seq*q_dim], post/dX [batch*seq*d], dW/W_after = concat(Q,K,V,O), *loss.
+ */
+WELVET_API welvet_status welvet_mha_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t d_model, int32_t num_heads, int32_t num_kv_heads,
+    int32_t head_dim, int32_t max_seq_len, int32_t mask, int32_t pos, int32_t dtype, int32_t backend,
+    const float* Q, const float* K, const float* V, const float* O, const float* x,
+    const float* grad_or_target, int32_t use_target, double lr, float* pre, float* post, float* dX,
+    float* dW, float* W_after, double* loss);
+
 /* SwiGLU forward — WVS1 wire. Gate/Up/Down Dense on Metal; SiLU⊙ host f64 (Go/cpp baseline). */
 WELVET_API welvet_status welvet_swiglu_forward_f32(
     int32_t batch, int32_t seq, int32_t input_dim, int32_t intermediate_dim, int32_t dtype,
@@ -137,6 +148,16 @@ WELVET_API welvet_status welvet_embedding_forward_f32(
     int32_t batch, int32_t vocab, int32_t emb, int32_t seq_len, int32_t in_rank, int32_t in_last,
     int32_t act, int32_t dtype, int32_t backend, const float* W, const float* x, float* pre,
     float* post);
+
+/* Embedding NormalBP leaf: forward → (MSEGrad | grad_out) → scatter dW; dX zeros; optional SGD.
+ * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE).
+ * Outputs: pre/post [out_n], dX [x_n] zeros, dW/W_after [vocab*emb], *loss.
+ */
+WELVET_API welvet_status welvet_embedding_normalbp_f32(
+    int32_t batch, int32_t vocab, int32_t emb, int32_t seq_len, int32_t in_rank, int32_t in_last,
+    int32_t act, int32_t dtype, int32_t backend, const float* W_init, const float* x,
+    const float* grad_or_target, int32_t use_target, double lr, float* pre, float* post, float* dX,
+    float* dW, float* W_after, double* loss);
 
 /* Sequential Dense chain — WSQ1 wire. packed: Depth×[Dim×Dim], x: [batch*seq*dim]
  * (seq=1 → [batch*dim]). pre/post: same layout (last child). Chains Metal soft-double Dense. */

@@ -17,11 +17,11 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 
 Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the whole mode table) is signed.
 
-**Current engine:** forward/volume FormatNone×34 largely landed; **Dense + RMSNorm + LayerNorm + SwiGLU + Softmax NormalBP** leaf+volume ×34 signed (Softmax ≥loose / ~strict). Other NormalBP layers + TrainModes still open.
+**Current engine:** forward/volume FormatNone×34 largely landed; **Dense…MHA NormalBP** leaf+volume ×34 signed (Softmax ≥loose/~strict; MHA leaf×34 W exact + dX/dW ≥strict). Resident Dense soft-double W (reload after SGD). Other NormalBP layers + TrainModes still open.
 
 **Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack volume-fwd still open (no `bind_stack`).
 
-**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` / `--rmsnorm-train` / `--layernorm-train` / `--swiglu-train` / `--softmax-train` live; other flags land with each suite.
+**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--embedding-train` / `--mha-train` live; other flags land with each suite.
 
 ---
 
@@ -30,7 +30,7 @@ Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the w
 Run: `./scripts/macos_build_w2a.sh --dense-train`  
 
 Wire: `WDB1`/`WDBO` (leaf), `WVN1`/`WVNO` (volume). Exact_bit vs Go.  
-Timing: warm-up + `--bench=N` (in-process; no spawn) → **goµs / mtlµs / spd%Δ** (`(mtl−go)/go×100`, neg ⇒ Metal faster).
+Timing: warm-up + `--bench=N` (in-process; no spawn) → **goµs / mtlµs / spd%Δ** (`(mtl−go)/go×100`, neg ⇒ Metal faster). Resident soft-double W (no remount each op); microbench spd%Δ is GPU-launch-bound vs Go host.
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
@@ -46,7 +46,7 @@ Timing: warm-up + `--bench=N` (in-process; no spawn) → **goµs / mtlµs / spd%
 
 Run: `./scripts/macos_build_w2a.sh --rmsnorm-train`  
 Wire: `WRB1`/`WRBO` (leaf), `WRV1`/`WRVO` (volume). Exact_bit vs Go.  
-Timing: same `--bench=N` / spd%Δ convention as Dense.
+Timing: same `--bench=N` / spd%Δ convention as Dense (leaf mount-once + γ reset; no remount each iter).
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
@@ -62,7 +62,7 @@ Timing: same `--bench=N` / spd%Δ convention as Dense.
 
 Run: `./scripts/macos_build_w2a.sh --layernorm-train`  
 Wire: `WLB1`/`WLBO` (leaf), `WLV1`/`WLVO` (volume). Exact_bit vs Go.  
-Timing: same `--bench=N` / spd%Δ convention as Dense/RMSNorm.
+Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + γ/β reset).
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
@@ -94,7 +94,7 @@ Timing: same `--bench=N` / spd%Δ convention.
 
 Run: `./scripts/macos_build_w2a.sh --softmax-train`  
 Wire: `WXB1`/`WXBO` (leaf), `WXV1`/`WXVO` (volume). Softmax = dX only (weightless).  
-Band: **≥loose** floor (Softmax hard to bit-match); leaf×34 / volume hit **strict (~80%)**; Kind×34 worst **loose**; Gumbel = smoke.
+Timing: leaf mount-once (reuse layer; no W). Band: **≥loose** floor (Softmax hard to bit-match); leaf×34 / volume hit **strict (~80%)**; Kind×34 worst **loose**; Gumbel = smoke.
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
@@ -112,34 +112,34 @@ Band: **≥loose** floor (Softmax hard to bit-match); leaf×34 / volume hit **st
 
 Run: `./scripts/macos_build_w2a.sh --embedding-train`  
 Wire: `WEB1`/`WEBO` (leaf), `WEV1`/`WEVO` (volume). Exact_bit vs Go.  
-Timing: same `--bench=N` / spd%Δ convention. dX zeros (discrete IDs); dW scatter.
+Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + W reset). dX zeros (discrete IDs); dW scatter.
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 (dX/dW/W/loss) | [ ] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + spectrum |
-| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 |
+| 1 | Leaf Float32 (dX/dW/W/loss) | [x] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + spectrum |
+| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 |
 
 ## w2a Go↔Metal (MHA NormalBP) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --mha-train`  
 Wire: `WHB1`/`WHBO` (leaf), `WHV1`/`WHVO` (volume). Exact_bit vs Go.  
-Timing: same `--bench=N` / spd%Δ convention. ModeSelf baseline (no dropout/QKNorm/cross).
+Timing: same `--bench=N` / spd%Δ convention (resident Dense Q/K/V/O; microbench spd%Δ is launch-bound). ModeSelf baseline (no dropout/QKNorm/cross).
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf DecoderCausal Float32 (dX/dW/W/loss) | [ ] | exact_bit + speed |
-| 2 | Leaf GQA + Encoder Float32 | [ ] | exact_bit |
-| 3 | Leaf DecoderCausal × all 34 dtypes | [ ] | exact_bit + speed table |
-| 4 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
-| 5 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
-| 6 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + spectrum |
-| 7 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
-| 8 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 |
+| 1 | Leaf DecoderCausal Float32 (dX/dW/W/loss) | [x] | exact_bit + speed |
+| 2 | Leaf GQA + Encoder Float32 | [x] | exact_bit |
+| 3 | Leaf DecoderCausal × all 34 dtypes | [x] | W exact_bit; dX/dW ≥strict (uint2 dW ~1 ULP) |
+| 4 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
+| 5 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
+| 6 | Volume 1×1×1×1 × all 34 dtypes | [x] | + spectrum |
+| 7 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
+| 8 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 |
 
 ## w2a Go↔Metal (CNN1/2/3 NormalBP) — sign-off evidence
 
@@ -448,8 +448,8 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | LayerNorm | [x] | [x] | [x] | `0.04-m2-layernorm-nbp` |
 | SwiGLU | [x] | [x] | [x] | `0.05-m2-swiglu-nbp` |
 | Softmax | [x] | [x] | [x] | `0.06-m2-softmax-nbp` |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
+| Embedding | [x] | [x] | [x] | `0.07-m2-embedding-nbp` |
+| MHA | [x] | [x] | [x] | `0.08-m2-mha-nbp` |
 | CNN1 | [ ] | [ ] | [ ] | |
 | CNN2 | [ ] | [ ] | [ ] | |
 | CNN3 | [ ] | [ ] | [ ] | |
@@ -467,7 +467,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [ ] | [ ] | [ ] | |
 
-**Checkpoint:** `0.06-m2-softmax-nbp` — Dense…SwiGLU exact_bit + Softmax ≥loose/~strict leaf+volume ×34; next Embedding.
+**Checkpoint:** `0.08-m2-mha-nbp` — Dense…MHA NormalBP leaf+volume ×34 (resident Dense W; Softmax ≥loose/~strict); next CNN1.
 
 ---
 
@@ -1343,6 +1343,8 @@ Ship: `runtime/line` `Credit::FamilyTweenSplitSparse` on pop (`apply_sparse_chil
 
 | Tag | Notes |
 |---|---|
+| `0.08-m2-mha-nbp` | MHA NormalBP Go↔Metal: leaf DecoderCausal/GQA/Encoder + ×34 (W exact; dX/dW ≥strict) + volume 111/chain/×34/222/211×34 exact_bit (`WHB1`/`WHV1`; resident Q/K/V/O) |
+| `0.07-m2-embedding-nbp` | Embedding NormalBP Go↔Metal: leaf Float32+×34 + volume 1×1×1×1 / chain / ×34 / 2×2×2×1 / 2×1×1×1×34 exact_bit (`WEB1`/`WEV1`; dX=0 scatter dW) |
 | `0.06-m2-softmax-nbp` | Softmax NormalBP Go↔Metal: leaf Standard+Kind×34 + volume 111/chain/×34/222/211×34 ≥loose (~strict); Gumbel smoke (`WXB1`/`WXV1`) |
 | `0.05-m2-swiglu-nbp` | SwiGLU NormalBP Go↔Metal: leaf Float32+×34 + volume 1×1×1×1 / chain / ×34 / 2×2×2×1 / 2×1×1×1×34 exact_bit (`WSB1`/`WSV1`) |
 | `0.04-m2-layernorm-nbp` | LayerNorm NormalBP Go↔Metal: leaf Float32+×34 + volume 1×1×1×1 / chain / ×34 / 2×2×2×1 / 2×1×1×1×34 exact_bit (`WLB1`/`WLV1`) |
