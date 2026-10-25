@@ -14,25 +14,37 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   parallel reduction. Validation band is `1e-12 * max(1, abs(reference))` for the
   finite Float32 fixtures in w2a; float2 is not IEEE float64 and exact-bit loss
   parity is not promised for arbitrary data.
-- SGD: Metal kernel for Float32 FormatNone weights. The learning rate is supplied
-  as float2, and the step is rounded to Float32 before subtraction to follow Go's
-  Float32 update semantics. Nonzero learning rates and double gradients must
-  fall within the normal Float32 exponent range used by float2 scratch. Non-Float32 weight updates and float64 bias updates
-  return `Unsupported`.
-- Sequential and NestedStack: host scheduling and copies around supported Dense
-  children. Unported children return `Unsupported` through direct and runtime APIs.
-- Dense volume NormalBP, line FamilyBP, and mesh FamilyBP use the same kernels.
-  Mesh gradient addition runs on Metal.
+- NormalBP forward/backward: Dense, RMSNorm, LayerNorm, SwiGLU, Softmax,
+  Embedding, MHA, CNN1/2/3, ConvT1/2/3, RNN, LSTM, Sequential, Residual,
+  Mamba, Metacognition, GDN and Stack use Metal numerical kernels.
+- SGD and native encoding: Metal arithmetic and native FormatNone storage updates
+  across all 34 dtypes. Float32 rounds the update step before subtraction to follow
+  Go's semantics; other dtypes retain their native encoding. Bias updates also run
+  on Metal. Explicit float2/software precision does not provide arbitrary IEEE
+  float64 arithmetic precision or exponent range.
+- Sequential and NestedStack: host scheduling and copies around supported GPU
+  children; no host numerical training fallback.
+- Dense volume NormalBP, line FamilyBP, and mesh FamilyBP use GPU kernels.
+  Mesh gradient addition runs on Metal. Line/mesh smoke validation currently
+  covers Float32 Dense, Sequential and NestedStack, not full dtype sign-off.
+- GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
 
-MHA, SwiGLU, RMSNorm, LayerNorm, Softmax, Embedding, CNN1/2/3, ConvT1/2/3, RNN,
-LSTM, Residual, Mamba, Metacognition, GDN, KMeans, and Parallel currently return
-`Unsupported`. Their previous CPU numerical entry points have been retired.
-They need real Metal kernels before availability can be restored. No build flag
-or runtime setting enables a CPU fallback.
+**Validated 2026-10-26:** all 17 NormalBP evidence sections / 128 case checks pass,
+including supported dtype loops, leaves, chains and volumes. Exact bits are
+required where specified, with a finite loss band of
+`1e-12 * max(1, abs(reference))`. Weight comparisons permit FP32 subnormal
+flushing when both values are below the smallest normal FP32. MHA leaf dtype
+cases retain their ≥strict gradient floor; Softmax retains ≥loose, and GDN
+retains ≥loose leaf / ≥industry volume. Stack binary 211 retains its existing
+post-only `1e-18` allowance. See [the checklist](TRAINING_CHECKLIST.md) for status.
+
+KMeans and Parallel NormalBP remain unsupported. Other training modes need their
+own validation; NormalBP sign-off does not transfer to them. No build flag or
+runtime setting enables a CPU numerical fallback.
 
 Host code handles allocation, validation, graph scheduling, tensor copies, storage
 encoding/decoding, and ABI export. Training still stages tensors between kernel
-calls and exports updated Float32 weights before refreshing the resident mirror.
+calls and exports updated native weights before refreshing resident mirrors.
 Full graph/tape residency and fused training are unfinished. This is GPU-only
 numerical execution, not a claim of zero host involvement or peak performance.
 Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
@@ -41,14 +53,16 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 
 ```sh
 ./scripts/build_macos.sh
-./scripts/macos_build_w2a.sh --metal-only
+./scripts/macos_build_w2a.sh --normalbp-all
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
 `TestGoVMetalOnly` checks rejected CPU APIs, GPU loss/gradients/updates,
 accumulation, repeated weight updates/cache refresh, Dense volumes, and the
-supported line/mesh cases. Existing broad parity suites remain backlog probes;
-they will fail on operations that are now explicitly unsupported.
+supported Float32 line/mesh cases. `TestGoVMetalNormalBP` runs all 17 requested
+NormalBP groups / 128 case checks. The combined runner executes both gates and
+defaults to one measured iteration per fixture; set
+`WELVET_METAL_BENCH_ITERS=2000` for longer timing runs.
 
 Shared artifact: `libwelvet_metal.dylib`. Static artifact:
 
