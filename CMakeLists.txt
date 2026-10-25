@@ -59,6 +59,7 @@ set(WELVET_CORE_SOURCES
   src/layers/rnn/rnn.cpp
   src/layers/lstm/lstm.cpp
   src/layers/gdn/gdn.cpp
+  src/layers/stack/stack.cpp
   src/layers/mamba/mamba.cpp
   src/layers/kmeans/kmeans.cpp
   src/layers/parallel/parallel.cpp

@@ -1485,6 +1485,18 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "MCV1", 4) == 0) {
     return run_volume_metacognition_normalbp(bench_iters);
   }
+  if (std::memcmp(magic, "GDB1", 4) == 0) {
+    return run_gdn_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "GDV1", 4) == 0) {
+    return run_volume_gdn_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "STKB", 4) == 0) {
+    return run_stack_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "STKV", 4) == 0) {
+    return run_volume_stack_normalbp(bench_iters);
+  }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);
   }

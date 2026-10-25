@@ -22,6 +22,7 @@
 #include "welvet/rnn.hpp"
 #include "welvet/sequential.hpp"
 #include "welvet/softmax.hpp"
+#include "welvet/stack.hpp"
 #include "welvet/status.hpp"
 #include "welvet/swiglu.hpp"
 
@@ -57,7 +58,7 @@ enum class OpKind : int32_t {
   Sequential = 16,
   Residual = 17,
   Mamba = 18,
-  // 19 Stack gap
+  Stack = 19,
   Metacognition = 20,
   GDN = 21,
   KMeans = 22,
@@ -85,6 +86,7 @@ struct Cell {
   sequential::Layer sequential_op;
   residual::Layer residual_op;
   mamba::Layer mamba_op;
+  stack::Layer stack_op;
   metacognition::Layer metacognition_op;
   gdn::Layer gdn_op;
   kmeans::Layer kmeans_op;
@@ -130,6 +132,7 @@ Status bind_lstm(Grid& g, int z, int y, int x, int l, lstm::Layer op);
 Status bind_sequential(Grid& g, int z, int y, int x, int l, sequential::Layer op);
 Status bind_residual(Grid& g, int z, int y, int x, int l, residual::Layer op);
 Status bind_mamba(Grid& g, int z, int y, int x, int l, mamba::Layer op);
+Status bind_stack(Grid& g, int z, int y, int x, int l, stack::Layer op);
 Status bind_metacognition(Grid& g, int z, int y, int x, int l, metacognition::Layer op);
 Status bind_gdn(Grid& g, int z, int y, int x, int l, gdn::Layer op);
 Status bind_kmeans(Grid& g, int z, int y, int x, int l, kmeans::Layer op);

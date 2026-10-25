@@ -56,6 +56,8 @@ Status cell(architecture::Cell& cell, const TensorF32& in, TensorF32* pre, Tenso
     return residual::forward(cell.residual_op, in, pre, post);
   case architecture::OpKind::Mamba:
     return mamba::forward(cell.mamba_op, in, pre, post);
+  case architecture::OpKind::Stack:
+    return stack::forward(cell.stack_op, in, pre, post);
   case architecture::OpKind::Metacognition:
     return metacognition::forward(cell.metacognition_op, in, pre, post);
   case architecture::OpKind::GDN:

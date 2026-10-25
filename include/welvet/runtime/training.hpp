@@ -22,6 +22,4 @@ Status step_dense(architecture::Grid& g, const forward::Result& fwd, const Tenso
                   double lr, double* loss, backward::Result* bwd_out);
 
 // Placeholder for remaining TrainModes / cameral (not Dense NormalBP).
-Status train_stack_gap(TrainMode mode);
-
 } // namespace welvet::runtime::training

@@ -47,4 +47,15 @@ Status new_configured(const Config& cfg, const float* packed_or_null, Layer* out
 // Input [batch, seq, hidden]. pre/post same shape (Linear). Host f32 matvec (Go FormatNone).
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// Grad loom length = weight_count (InQKV|InZ|InB|InA|Out|Conv|ALog|DtBias|γ).
+int grad_w_size(const Layer& layer);
+
+// Truncated-BPTT NormalBP (f32). State/Conv history stop-grad across tokens.
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
+Status export_packed_f32(const Layer& layer, float* dst);
+
 } // namespace welvet::gdn

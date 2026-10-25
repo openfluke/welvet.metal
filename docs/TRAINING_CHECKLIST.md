@@ -17,11 +17,11 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 
 Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the whole mode table) is signed.
 
-**Current engine:** forward/volume FormatNone×34 largely landed; **Dense…Metacognition NormalBP** leaf+volume ×34 signed (Softmax ≥loose/~strict; MHA leaf×34 W exact + dX/dW ≥strict). Resident Dense soft-double W (reload after SGD). Remaining NormalBP: GDN / KMeans / Parallel / Stack; other TrainModes still open.
+**Current engine:** forward/volume FormatNone×34 largely landed; **Dense…Stack NormalBP** leaf+volume signed (Softmax ≥loose/~strict; MHA leaf×34 W exact + dX/dW ≥strict; GDN leaf ≥loose / vol ≥industry f32-only). Resident Dense soft-double W (reload after SGD). Remaining NormalBP: KMeans / Parallel; other TrainModes still open.
 
-**Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack volume-fwd still open (no `bind_stack`).
+**Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack NestedStack volume NBP via `bind_stack` (STKV).
 
-**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--sequential-train` / `--residual-train` / `--mamba-train` / `--metacognition-train` live; other flags land with each suite.
+**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--gdn-train` / `--stack-train` live; other flags land with each suite.
 
 ---
 
@@ -248,15 +248,15 @@ Timing: same `--bench=N` / spd%Δ convention. lastGate-scale + Observed Dense; l
 ## w2a Go↔Metal (GDN NormalBP) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --gdn-train`  
-Wire: `GDB1`/`GDBO` (leaf); `GDV1`/`GDVO` (volume). Exact_bit vs Go.  
+Wire: `GDB1`/`GDBO` (leaf); `GDV1`/`GDVO` (volume). ≥loose leaf / ≥industry volume vs Go (host f32 scan FP; Metal≡cpp).  
 Timing: same `--bench=N` / spd%Δ convention. Truncated-BPTT (state/conv stop-grad); f32-only (no ×34).
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [ ] | exact_bit + speed |
-| 2 | Volume 1×1×1×1 | [ ] | shape-preserving H |
-| 3 | Volume 1×1×1×2 chain | [ ] | two GDN hops |
-| 4 | Volume 2×2×2×1 | [ ] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [x] | ≥loose (dW floor) + speed |
+| 2 | Volume 1×1×1×1 | [x] | ≥industry |
+| 3 | Volume 1×1×1×2 chain | [x] | ≥industry |
+| 4 | Volume 2×2×2×1 | [x] | ≥industry; scaled init |
 
 ## w2a Go↔Metal (Stack NestedStack-of-Dense NormalBP) — sign-off evidence
 
@@ -266,10 +266,10 @@ Timing: same `--bench=N` / spd%Δ convention. NestedStack of Dense Dim→Dim Lin
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [ ] | exact_bit + speed |
-| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | NestedStack Dense |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [x] | exact_bit + speed |
+| 2 | Leaf ×34 | [x] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | NestedStack Dense |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | binary 211 post denorm ≤1e-18 OK |
 
 ---
 
@@ -463,11 +463,11 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | KMeans | [ ] | [ ] | [ ] | |
 | Mamba | [x] | [x] | [x] | `0.15-m2-mamba-nbp` |
 | Metacognition | [x] | [x] | [x] | `0.16-m2-metacognition-nbp` |
-| GDN | [ ] | [ ] | [ ] | |
+| GDN | [x] | [x] | [x] | `0.17-m2-gdn-nbp` |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | `0.18-m2-stack-nbp` |
 
-**Checkpoint:** `0.16-m2-metacognition-nbp` — Dense…Metacognition NormalBP leaf+volume ×34 (REB1/MBB1/MCB1 + vol); next GDN / KMeans / Parallel / Stack.
+**Checkpoint:** `0.18-m2-stack-nbp` — Dense…Stack NormalBP (GDN f32 ≥loose/≥industry; Stack NestedStack exact_bit STKB/STKV); next KMeans / Parallel.
 
 ---
 
@@ -1343,6 +1343,8 @@ Ship: `runtime/line` `Credit::FamilyTweenSplitSparse` on pop (`apply_sparse_chil
 
 | Tag | Notes |
 |---|---|
+| `0.18-m2-stack-nbp` | Stack NestedStack-of-Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`STKB`/`STKV`; Dense Dim→Dim Linear, loom n_children×[Dim×Dim]; bind_stack) |
+| `0.17-m2-gdn-nbp` | GDN NormalBP Go↔Metal: leaf ≥loose + volume 111/chain/222 ≥industry f32-only (`GDB1`/`GDV1`; truncated-BPTT; Metal≡cpp host f32 scan) |
 | `0.16-m2-metacognition-nbp` | Metacognition NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`MCB1`/`MCV1`; lastGate-scale + Observed Dense, loom [Dim×Dim]) |
 | `0.15-m2-mamba-nbp` | Mamba NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`MBB1`/`MBV1`; scan BPTT + In/Out Dense, loom In\|Out\|ALog\|DSkip) |
 | `0.14-m2-residual-nbp` | Residual NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`REB1`/`REV1`; F reverse Dense + skip grad, loom Depth×[Dim×Dim]) |

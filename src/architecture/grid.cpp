@@ -184,6 +184,13 @@ Status bind_mamba(Grid& g, int z, int y, int x, int l, mamba::Layer op) {
   return bind_at(g, z, y, x, l, LayerType::Mamba, OpKind::Mamba,
                  [&](Cell& c) { c.mamba_op = std::move(op); });
 }
+Status bind_stack(Grid& g, int z, int y, int x, int l, stack::Layer op) {
+  return bind_at(g, z, y, x, l, LayerType::Stack, OpKind::Stack, [&](Cell& c) {
+    c.meta.input_height = op.meta.input_height;
+    c.meta.output_height = op.meta.output_height;
+    c.stack_op = std::move(op);
+  });
+}
 Status bind_metacognition(Grid& g, int z, int y, int x, int l, metacognition::Layer op) {
   return bind_at(g, z, y, x, l, LayerType::Metacognition, OpKind::Metacognition, [&](Cell& c) {
     c.meta.input_height = op.cfg.dim;

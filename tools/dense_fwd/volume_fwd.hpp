@@ -91,3 +91,11 @@ int run_volume_mamba_normalbp(int bench_iters);        // MBV1 → MBVO (+ optio
 // Metacognition NormalBP (training)
 int run_metacognition_normalbp(int bench_iters);       // MCB1 → MCBO (+ optional WVB1)
 int run_volume_metacognition_normalbp(int bench_iters); // MCV1 → MCVO (+ optional WVB1)
+
+// GDN NormalBP (training, f32)
+int run_gdn_normalbp(int bench_iters);                 // GDB1 → GDBO (+ optional WVB1)
+int run_volume_gdn_normalbp(int bench_iters);          // GDV1 → GDVO (+ optional WVB1)
+
+// Stack NestedStack-of-Dense NormalBP (training)
+int run_stack_normalbp(int bench_iters);               // STKB → STKO (+ optional WVB1)
+int run_volume_stack_normalbp(int bench_iters);        // STKV → STVO (+ optional WVB1)

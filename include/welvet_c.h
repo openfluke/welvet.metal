@@ -309,6 +309,20 @@ WELVET_API welvet_status welvet_gdn_forward_f32(
     int32_t key_head_dim, int32_t value_head_dim, int32_t conv_kernel, int32_t dtype, int32_t backend,
     const float* packed, const float* x, float* pre, float* post);
 
+/* GDN truncated-BPTT NormalBP leaf (f32). use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD. */
+WELVET_API welvet_status welvet_gdn_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t hidden, int32_t num_key_heads, int32_t num_value_heads,
+    int32_t key_head_dim, int32_t value_head_dim, int32_t conv_kernel, int32_t dtype, int32_t backend,
+    const float* packed, const float* x, const float* grad_or_target, int32_t use_target, double lr,
+    float* pre, float* post, float* dX, float* dW, float* W_after, double* loss);
+
+/* Stack NestedStack-of-Dense Dim→Dim NormalBP leaf (STKB/STKO). */
+WELVET_API welvet_status welvet_stack_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t n_children, int32_t child_act, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* Mamba — WMB1 wire. Dense soft-double In/Out FormatNone×34 + host f64 selective scan.
  * packed: InProj|OutProj|ALog|DSkip. */
 WELVET_API welvet_status welvet_mamba_forward_f32(
