@@ -1255,7 +1255,7 @@ static void usage() {
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N → WVB2 mount_ns+exec_ns for volume wires\n"
-               "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1→WVFO\n");
+               "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1/WSG1/SQG1…MCG1→WVFO\n");
 }
 
 int main(int argc, char** argv) {
@@ -1384,6 +1384,51 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WKF1", 4) == 0) {
     return run_volume_kmeans_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WSG1", 4) == 0) {
+    return run_volume_swiglu_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "SQG1", 4) == 0) {
+    return run_volume_sequential_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "REG1", 4) == 0) {
+    return run_volume_residual_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "RNG1", 4) == 0) {
+    return run_volume_rnn_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "LSG1", 4) == 0) {
+    return run_volume_lstm_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "C1G1", 4) == 0) {
+    return run_volume_cnn1_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "C2G1", 4) == 0) {
+    return run_volume_cnn2_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "C3G1", 4) == 0) {
+    return run_volume_cnn3_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "T1G1", 4) == 0) {
+    return run_volume_convt1_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "T2G1", 4) == 0) {
+    return run_volume_convt2_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "T3G1", 4) == 0) {
+    return run_volume_convt3_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "WEG1", 4) == 0) {
+    return run_volume_embedding_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "MBG1", 4) == 0) {
+    return run_volume_mamba_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "GDG1", 4) == 0) {
+    return run_volume_gdn_fwd(bench_iters);
+  }
+  if (std::memcmp(magic, "MCG1", 4) == 0) {
+    return run_volume_metacognition_fwd(bench_iters);
   }
   const bool v3 = std::memcmp(magic, "WVD3", 4) == 0;
   const bool v2 = std::memcmp(magic, "WVD2", 4) == 0;

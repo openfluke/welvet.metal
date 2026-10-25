@@ -95,10 +95,10 @@ const std::vector<Entry>& build() {
 
       // --- Runtime / architecture / training ---
       {"arch.grid", "architecture",
-       "Grid hop_order + remote links + bind_* (WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1)", true},
+       "Grid hop_order + remote links + bind_* (WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1/WSG1/SQG1…MCG1)", true},
       {"runtime.forward", "runtime", "volume_dense hop/remote/posts + cell() all Metal layers", true},
       {"runtime.forward.volume_wires", "runtime",
-       "volume mount-all WVB2 (Dense/MHA/RMS/LN/Softmax/Parallel/KMeans)", true},
+       "volume mount-all WVB2 (Dense/MHA/RMS/LN/Softmax/Parallel/KMeans/SwiGLU/Seq/Res/RNN/LSTM/CNN*/ConvT*/Emb/Mamba/GDN/Meta)", true},
       {"runtime.backward", "runtime", "gap? volume backward Metal", false},
       {"runtime.step", "runtime", "gap? Line StepBP/StepTween* Metal", false},
       {"runtime.mesh", "runtime", "gap? MeshBP/MeshTween* Metal", false},
