@@ -23,7 +23,7 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 | SGD and native storage updates | Metal arithmetic and native FormatNone encoding across all 34 dtypes; bias updates run on Metal too |
 | GDN | Metal Float32 truncated-BPTT; state/conv history stop-gradient |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging remain |
-| Mesh gradient joins | Metal accumulation kernel; Dense/Sequential/NestedStack Float32 smoke coverage |
+| Mesh gradient joins | Metal accumulation kernel; Dense mesh-clock ×34, disabled-cell and remote-link checks |
 | KMeans / Parallel NormalBP | Open; no CPU numerical fallback |
 | Performance | Correctness gates passed; full residency, dispatch reduction and throughput tuning remain open |
 
@@ -316,32 +316,43 @@ Timing: same `--bench=N` / spd%Δ convention. NestedStack of Dense Dim→Dim Lin
 ## w2a Go↔Metal (StepBP Line + MeshBP) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --stepbp-train`  
-Wires: `STB1`/`STBO` (Line StepBP); `MBP1`/`MBPO` (mesh-clock MeshBP FamilyBP). Current validated subset: Float32 Dense, Sequential and NestedStack only; loss band applies. Other rows below remain pending.
-Each Line ×34 kind prints **dtype / band / exact%W / goµs / mtlµs / spd%Δ**.  
-3D: Dense mesh-clock 1×1×1×1 / 2×1×1×1 / 2×2×2×1 + ModeMeshBP volume 2×2×2×1 for all NormalBP-signed kinds (Go cameral ModeMeshBP = volume Forward+Step). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path. KMeans Line deferred (NBP open).
+Wires: `STB1`/`STBO` (Line FamilyBP); `MBP1`/`MBPO` (Dense mesh-clock FamilyBP).
+`TestGoVMetalStepBPTrain` contains **84 case groups**, including the dtype loops below.
+The runner also executes `TestGoVMetalOnly` and defaults to one measured iteration.
+Every forward, backward, loss, gradient join and SGD calculation uses Metal kernels;
+host code schedules ticks, stores tapes and stages buffers.
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1 | Dense multi-hop Float32 (W/loss) | [x] | validated by TestGoVMetalOnly; loss band applies |
-| 2 | Dense 1-hop ×34 | [ ] | spectrum + speed table |
-| 3–4 | RMSNorm f32 + ×34 | [ ] | full spectrum + speed |
-| 5–6 | LayerNorm f32 + ×34 | [ ] | full spectrum + speed |
-| 7–8 | Softmax f32 + ×34 | [ ] | full spectrum + speed |
-| 9–10 | SwiGLU f32 + ×34 | [ ] | full spectrum + speed |
-| 11 | Sequential Float32 | [x] | Line FamilyBP smoke validated |
-| 12 | Sequential ×34 | [ ] | full dtype coverage pending |
-| 13–14 | Residual f32 + ×34 | [ ] | full spectrum + speed |
-| 15–16 | Mamba f32 + ×34 | [ ] | full spectrum + speed |
-| 17–18 | Embedding f32 + ×34 | [ ] | full spectrum + speed |
-| 19–20 | MHA f32 + ×34 | [ ] | full spectrum + speed |
-| 21–22 | CNN1 f32 + ×34 | [ ] | full spectrum + speed (CNN2/3 share) |
-| 23–24 | ConvT1 f32 + ×34 | [ ] | full spectrum + speed (ConvT2/3 share) |
-| 25–26 | RNN f32 + ×34 | [ ] | full spectrum + speed |
-| 27–28 | LSTM f32 + ×34 | [ ] | full spectrum + speed |
-| 29–31 | Dense MeshBP mesh-clock 111/211/222 | [x] | Float32; loss band applies |
-| 32–49 (subset) | MeshBP volume 2×2×2×1: Dense / Sequential / NestedStack Float32 | [x] | ModeMeshBP volume smoke validated |
-| 32–49 (remaining) | Other MeshBP volume kinds / dtype coverage | [ ] | pending validation |
-| — | NestedStack Line Float32 | [x] | Line FamilyBP smoke validated |
+| Case group | Status | Evidence |
+|---|:---:|---|
+| Dense multi-hop Line Float32 | [x] | Per-tick tapes and FamilyBP on pop; exact weights, finite loss band |
+| Dense Line ×34 | [x] | All supported FormatNone dtypes |
+| RMSNorm / LayerNorm Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Softmax Line Float32 + ×34 | [x] | Weightless loss check uses the finite loss band |
+| SwiGLU / Sequential / Residual Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Mamba / Metacognition Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| GDN Line Float32 | [x] | ≥strict weights; finite loss band; GPU float2 reductions/transcendentals |
+| NestedStack Line Float32 + ×34 | [x] | Recursive flattening and child updates |
+| Embedding / MHA Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| CNN1 / ConvT1 Line Float32 + ×34 | [x] | Explicit Line dispatch |
+| CNN2/3 / ConvT2/3 Line ×34 | [x] | Explicit rank-4/rank-5 inputs, including Float32 |
+| RNN / LSTM Line Float32 + ×34 | [x] | Exact weights; finite loss band |
+| Dense mesh-clock 111 / 211 / 222 Float32 | [x] | Double-buffer forward ticks, reverse-time credit and SGD |
+| Dense mesh-clock 111 / 222 ×34 | [x] | Repeated ticks and native storage updates |
+| Dense mesh-clock disabled cell + remote link | [x] | Disabled passthrough and remote gradient routing |
+| Volume 222 Float32: all 21 supported families | [x] | Shared volume Forward+Step path used by Go ModeMeshBP |
+| Volume 211 ×34: all 20 dtype-generic families | [x] | GDN is Float32-only; retains its volume ≥industry floor |
+| Benchmark fixture reset | [x] | Line dtype sweeps and GDN compare benchmark results with fresh-run results; Dense mesh dtype/routing fixtures do likewise |
+
+**Scope:** volume rows deliberately reuse the NormalBP volume fixtures because
+Go's grid ModeMeshBP uses that same Forward+Step path. They do not establish
+mesh-clock BPTT parity for non-Dense cells. The generic mesh runtime dispatches
+supported GPU layers, but the mesh-clock wire and its parity sign-off cover Dense.
+KMeans and Parallel remain deferred; no CPU fallback is supplied.
+
+**Validated:** 2026-10-26, unreleased. Precision policy above applies. Benchmark
+repetitions rebuild the initial child configuration and weights; timing includes
+that reset, matching the Go fixture setup. These small correctness fixtures do
+not establish a performance win.
 
 ## w2a Go↔Metal (Tween ModeTween) — sign-off evidence
 
@@ -510,7 +521,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported NormalBP layer families validated inside nodes and in volumes, including dtype coverage (GDN Float32 only), under the precision policy above. KMeans and Parallel remain open. StepBP/MeshBP have only the Float32 subset documented below.
+**Checkpoint:** all 21 supported NormalBP layer families validated inside nodes and in volumes, including dtype coverage (GDN Float32 only), under the precision policy above. KMeans and Parallel remain open. StepBP Line and the requested MeshBP evidence are validated below; non-Dense mesh-clock parity remains separate.
 
 ---
 
@@ -518,35 +529,35 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 
 Needs Step `Line` pipe + FamilyBP (NormalBP credit) on pop.  
 Ship: thin Stack host + `runtime/line` TickLine/TrainLineMSE; wire `STB1`/`STBO`; w2a `--stepbp-train`.  
-**3D volumetric** for StepBP = MeshBP (`runtime/step` mesh-clock FamilyBP + ModeMeshBP volume Step). CNN2/3 and ConvT2/3 share CNN1/ConvT1 FamilyBP dispatch.
+**3D volumetric** for StepBP = MeshBP (`runtime/step` mesh-clock FamilyBP + ModeMeshBP volume Step). All CNN/ConvT dimensions have explicit Line ×34 fixtures, including rank-5 inputs.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [x] | [x] | [ ] | Float32 only; 2026-10-26 |
-| RMSNorm | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| LayerNorm | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| SwiGLU | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| Softmax | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| Embedding | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| MHA | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| CNN1 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| CNN2 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| CNN3 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| ConvT1 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| ConvT2 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| ConvT3 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| RNN | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| LSTM | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| Sequential | [x] | [x] | [ ] | Float32 only; 2026-10-26 |
-| Residual | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| Metacognition | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
-| GDN | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [x] | [x] | [ ] | Float32 only; 2026-10-26 |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** Dense, Sequential and NestedStack Float32 Line + volume smoke validated by TestGoVMetalOnly. Full ×34 coverage and other layer families remain open.
+**Checkpoint:** all 21 supported Line families and the shared 3D volume path validated, including all supported dtypes (GDN Float32 only). KMeans/Parallel remain open. Actual mesh-clock BPTT evidence is Dense-only; see section 7.
 
 ---
 
@@ -697,34 +708,33 @@ Ship: `runtime/line` Credit::FamilyBP on pop (same credit as StepBP / TweenChain
 ## 7 — MeshBP
 
 Grid tick FamilyBP: `runtime/step` Forward×ticks + Backward BPTT + ApplyGradSGD (`MBP1`/`MBPO` for Dense mesh-clock).  
-Go ModeMeshBP on grid also = volume Forward+Step (cameral_train). Current evidence covers Float32 Dense mesh-clock 111/211/222 and Dense/Sequential/NestedStack volume 222; other kinds and full dtype coverage remain unverified.
+Go ModeMeshBP on grid also = volume Forward+Step (cameral_train). Dense mesh-clock is validated at 111/211/222 Float32 and 111/222 ×34, plus disabled/remote routing. All supported families have shared volume-path evidence at 222 Float32 and 211 ×34 (GDN Float32 only). Non-Dense mesh-clock parity remains unverified.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [x] | [x] | [ ] | Float32 only; 2026-10-26 |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [x] | [ ] | Float32 volume 222 only; 2026-10-26 |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| LayerNorm | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| SwiGLU | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| Softmax | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| Embedding | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| MHA | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| CNN1 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| CNN2 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| CNN3 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| ConvT1 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| ConvT2 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| ConvT3 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| RNN | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| LSTM | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| Sequential | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| Residual | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| Metacognition | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| GDN | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [x] | [ ] | Float32 volume 222 only; 2026-10-26 |
-
+| Stack | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
 
 ## 8 — MeshTween
 
@@ -1390,7 +1400,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
-| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP/MeshBP retain Float32 subset evidence only; full dtype sign-off remains open. |
+| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. Non-Dense mesh-clock parity remains open. |
 | `0.19-m2-meshbp` | StepBP Line + MeshBP Go↔Metal: STB1 Line FamilyBP × kinds (+×34) + MBP1 Dense mesh-clock 111/211/222 + ModeMeshBP vol 222 for NormalBP-signed kinds (`runtime/line` + `runtime/step`; KMeans Line deferred) |
 | `0.18-m2-stack-nbp` | Stack NestedStack-of-Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`STKB`/`STKV`; Dense Dim→Dim Linear, loom n_children×[Dim×Dim]; bind_stack) |
 | `0.17-m2-gdn-nbp` | GDN NormalBP Go↔Metal: leaf ≥loose + volume 111/chain/222 ≥industry f32-only (`GDB1`/`GDV1`; truncated-BPTT; Metal≡cpp host f32 scan) |

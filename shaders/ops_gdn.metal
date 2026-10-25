@@ -1,4 +1,11 @@
 namespace gdn_gpu {
+// Go promotes normalization reductions and transcendental evaluations before
+// rounding back to Float32. Preserve those rounding points using float2 on GPU.
+inline float exp_f32(float x) { return sd_to_float(sd_exp(float2(x, 0))); }
+inline float inverse_norm(float2 sum) {
+  return sd_to_float(sd_div(float2(1, 0), sd_sqrt(sum)));
+}
+
 struct Config {
   int hidden_size, num_key_heads, num_value_heads, key_head_dim, value_head_dim, conv_kernel;
   float eps;
@@ -61,17 +68,17 @@ void matvec_t_f32(device const float *w, int rows, int cols, device const float 
   }
 }
 
-float silu(float x) { return x / (1.0f + static_cast<float>(exp(static_cast<float>(-x)))); }
+float silu(float x) { return x / (1.0f + exp_f32(-x)); }
 
 float silu_deriv(float x) {
-  const float s = 1.0f / (1.0f + static_cast<float>(exp(static_cast<float>(-x))));
+  const float s = 1.0f / (1.0f + exp_f32(-x));
   return s + x * s * (1.0f - s);
 }
 
-float softplus(float x) {
+float2 softplus(float x) {
   if (x > 20.0)
-    return x;
-  return log(1.0f + exp(x));
+    return float2(x, 0);
+  return sd_log(sd_add(float2(1, 0), sd_exp(float2(x, 0))));
 }
 
 void rms_norm_gated(device float *x, device const float *z, device const float *gamma, int n,
@@ -80,7 +87,7 @@ void rms_norm_gated(device float *x, device const float *z, device const float *
   for (int i = 0; i < n; ++i)
     mean += x[i] * x[i];
   mean /= static_cast<float>(n);
-  const float inv = 1.0f / static_cast<float>(sqrt(static_cast<float>(mean + eps)));
+  const float inv = 1.0f / sd_to_float(sd_sqrt(float2(mean + eps, 0)));
   for (int i = 0; i < n; ++i) {
     const float g = (gamma) ? gamma[i] : 1.0f;
     x[i] = x[i] * inv * g * silu(z[i]);
@@ -90,12 +97,12 @@ void rms_norm_gated(device float *x, device const float *z, device const float *
 // Match Go l2normBackward (float64 round-trip on sum).
 void l2norm_backward(device const float *x_raw, int n, float inv, device const float *dy,
                      device float *dx) {
-  float s = 0.0;
+  float2 s = float2(0);
   for (int i = 0; i < n; ++i) {
     const float y = x_raw[i] * inv;
-    s += static_cast<float>(dy[i]) * static_cast<float>(y);
+    s = sd_add(s, sd_mul(float2(dy[i], 0), float2(y, 0)));
   }
-  const float sf = static_cast<float>(s);
+  const float sf = sd_to_float(s);
   for (int j = 0; j < n; ++j) {
     const float y = x_raw[j] * inv;
     dx[j] = inv * (dy[j] - y * sf);
@@ -248,21 +255,21 @@ void forward_decode_tape(thread Arena &arena, thread Layer &layer, thread Scratc
   tp.k_rep = alloc(arena, nh * hd_k);
   tp.q_inv = alloc(arena, nk);
   tp.k_inv = alloc(arena, nk);
-  const float scale = static_cast<float>(1.0 / sqrt(static_cast<float>(hd_k)));
+  const float scale = inverse_norm(float2(hd_k, 0));
   for (int hi = 0; hi < nk; ++hi) {
     device const float *qs = q + hi * hd_k;
     device const float *ks = key + hi * hd_k;
-    float sq = 0.0, sk = 0.0;
+    float2 sq = float2(0), sk = float2(0);
     for (int j = 0; j < hd_k; ++j) {
       const float vq = static_cast<float>(qs[j]);
-      sq += vq * vq;
+      sq = sd_add(sq, sd_mul(float2(vq, 0), float2(vq, 0)));
     }
     for (int j = 0; j < hd_k; ++j) {
       const float vk = static_cast<float>(ks[j]);
-      sk += vk * vk;
+      sk = sd_add(sk, sd_mul(float2(vk, 0), float2(vk, 0)));
     }
-    const float invq = static_cast<float>(1.0 / sqrt(sq + 1e-6));
-    const float invk = static_cast<float>(1.0 / sqrt(sk + 1e-6));
+    const float invq = inverse_norm(sd_add(sq, float2(1e-6f, 2.5247572468697606e-15f)));
+    const float invk = inverse_norm(sd_add(sk, float2(1e-6f, 2.5247572468697606e-15f)));
     tp.q_inv[static_cast<uint>(hi)] = invq;
     tp.k_inv[static_cast<uint>(hi)] = invk;
     for (int r = 0; r < rep; ++r) {
@@ -279,11 +286,11 @@ void forward_decode_tape(thread Arena &arena, thread Layer &layer, thread Scratc
   for (int i = 0; i < nh; ++i) {
     tp.beta[static_cast<uint>(i)] =
         1.0f /
-        (1.0f + static_cast<float>(exp(static_cast<float>(-tp.beta_raw[static_cast<uint>(i)]))));
+        (1.0f + exp_f32(-tp.beta_raw[static_cast<uint>(i)]));
     const float al = static_cast<float>(layer.a_log[static_cast<uint>(i)]);
     const float dt =
         static_cast<float>(tp.a_raw[static_cast<uint>(i)] + layer.dt_bias[static_cast<uint>(i)]);
-    tp.g[static_cast<uint>(i)] = static_cast<float>(-exp(al) * softplus(dt));
+    tp.g[static_cast<uint>(i)] = sd_to_float(-sd_mul(sd_exp(float2(al, 0)), softplus(dt)));
   }
 
   tp.state_old = s.state;
@@ -295,7 +302,7 @@ void forward_decode_tape(thread Arena &arena, thread Layer &layer, thread Scratc
 
   for (int h_idx = 0; h_idx < nh; ++h_idx) {
     device float *st = state + h_idx * hd_k * hd_v;
-    const float gt = static_cast<float>(exp(static_cast<float>(tp.g[static_cast<uint>(h_idx)])));
+    const float gt = exp_f32(tp.g[static_cast<uint>(h_idx)]);
     const float bt = tp.beta[static_cast<uint>(h_idx)];
     device const float *qt = tp.q_rep + h_idx * hd_k;
     device const float *kt = tp.k_rep + h_idx * hd_k;
@@ -374,16 +381,16 @@ void backward_step(thread Arena &arena, thread Layer &layer, thread const GdnSte
       mean += xr[i] * xr[i];
     mean /= static_cast<float>(n);
     const float inv =
-        1.0f / static_cast<float>(sqrt(static_cast<float>(mean + static_cast<float>(c.eps))));
-    float s = 0.0;
+        1.0f / sd_to_float(sd_sqrt(float2(mean + c.eps, 0)));
+    float2 s = float2(0);
     for (int i = 0; i < n; ++i) {
       const float gamma =
           (i < static_cast<int>(hd_v)) ? layer.norm_gamma[static_cast<uint>(i)] : 1.0f;
       const float sz = silu(zz[i]);
       const float ci = gamma * sz;
-      s += static_cast<float>(dyh[i]) * static_cast<float>(ci) * static_cast<float>(xr[i]);
+      s = sd_add(s, sd_mul(sd_mul(float2(dyh[i], 0), float2(ci, 0)), float2(xr[i], 0)));
     }
-    const float sf = static_cast<float>(s);
+    const float sf = sd_to_float(s);
     for (int i = 0; i < n; ++i) {
       const float gamma =
           (i < static_cast<int>(hd_v)) ? layer.norm_gamma[static_cast<uint>(i)] : 1.0f;
@@ -456,7 +463,7 @@ void backward_step(thread Arena &arena, thread Layer &layer, thread const GdnSte
       dkt[static_cast<uint>(j)] += dktj;
     }
 
-    const float gt = static_cast<float>(exp(static_cast<float>(tp.g[static_cast<uint>(h_idx)])));
+    const float gt = exp_f32(tp.g[static_cast<uint>(h_idx)]);
     float dgt = 0.0f;
     for (int j = 0; j < hd_k; ++j) {
       for (int d = 0; d < hd_v; ++d) {
@@ -467,8 +474,8 @@ void backward_step(thread Arena &arena, thread Layer &layer, thread const GdnSte
     const float al = static_cast<float>(layer.a_log[static_cast<uint>(h_idx)]);
     const float dt_raw = static_cast<float>(tp.a_raw[static_cast<uint>(h_idx)] +
                                             layer.dt_bias[static_cast<uint>(h_idx)]);
-    const float sig = static_cast<float>(1.0 / (1.0 + exp(-dt_raw)));
-    const float d_dt_raw = d_gate * static_cast<float>(-exp(al)) * sig;
+    const float sig = sd_to_float(sd_sigmoid(float2(dt_raw, 0)));
+    const float d_dt_raw = d_gate * -sd_to_float(sd_exp(float2(al, 0))) * sig;
     d_a_raw[static_cast<uint>(h_idx)] += d_dt_raw;
     g->d_dt_bias[static_cast<uint>(h_idx)] += d_dt_raw;
     g->d_a_log[static_cast<uint>(h_idx)] += d_gate * tp.g[static_cast<uint>(h_idx)];
@@ -481,7 +488,7 @@ void backward_step(thread Arena &arena, thread Layer &layer, thread const GdnSte
     }
   }
 
-  const float scale = static_cast<float>(1.0 / sqrt(static_cast<float>(hd_k)));
+  const float scale = inverse_norm(float2(hd_k, 0));
   device float *dq = alloc(arena, key_d);
   device float *dk = alloc(arena, key_d);
   for (int hi = 0; hi < nk; ++hi) {

@@ -128,7 +128,8 @@ if [[ "$MODE" == "stack_train" ]]; then
   exit 0
 fi
 if [[ "$MODE" == "stepbp_train" ]]; then
-  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalStepBPTrain$' -timeout 120m
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalStepBPTrain|TestGoVMetalOnly)$' -timeout 30m
   exit 0
 fi
 

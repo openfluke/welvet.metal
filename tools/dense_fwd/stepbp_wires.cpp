@@ -54,23 +54,49 @@ static int prod_shape(const std::vector<int32_t>& sh) {
 }
 
 
-static bool read_child(welvet::stack::Child* ch) {
+// Retain the child wire so every benchmark iteration starts from identical
+// weights and configuration, including recursively nested Stack children.
+class ChildReader {
+public:
+  std::vector<unsigned char> bytes;
+  explicit ChildReader(const std::vector<unsigned char>* replay = nullptr) : replay_(replay) {}
+  template <typename T> bool read(T* p, size_t n) {
+    const size_t size = n * sizeof(T);
+    if (replay_) {
+      if (offset_ > replay_->size() || size > replay_->size() - offset_) return false;
+      if (size) std::memcpy(p, replay_->data() + offset_, size);
+      offset_ += size;
+      return true;
+    }
+    if (!read_exact(p, n)) return false;
+    if (size) {
+      const auto* begin = reinterpret_cast<const unsigned char*>(p);
+      bytes.insert(bytes.end(), begin, begin + size);
+    }
+    return true;
+  }
+private:
+  const std::vector<unsigned char>* replay_;
+  size_t offset_ = 0;
+};
+
+static bool read_child(ChildReader& reader, welvet::stack::Child* ch) {
   int32_t kind = 0;
-  if (!read_exact(&kind, 1)) return false;
+  if (!reader.read(&kind, 1)) return false;
   ch->kind = static_cast<welvet::stack::Kind>(kind);
   switch (ch->kind) {
   case welvet::stack::Kind::Dense: {
     int32_t in = 0, out = 0, act = 0, dtype = 1;
-    if (!read_exact(&in, 1) || !read_exact(&out, 1) || !read_exact(&act, 1) ||
-        !read_exact(&dtype, 1)) {
+    if (!reader.read(&in, 1) || !reader.read(&out, 1) || !reader.read(&act, 1) ||
+        !reader.read(&dtype, 1)) {
       return false;
     }
     std::vector<float> W(static_cast<std::size_t>(out * in));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     uint32_t bias_len = 0;
-    if (!read_exact(&bias_len, 1)) return false;
+    if (!reader.read(&bias_len, 1)) return false;
     std::vector<double> bias(bias_len);
-    if (bias_len > 0 && !read_exact(bias.data(), bias.size())) return false;
+    if (bias_len > 0 && !reader.read(bias.data(), bias.size())) return false;
     auto st = welvet::dense::new_layer(in, out, static_cast<welvet::Activation>(act),
                                        static_cast<welvet::DType>(dtype), W.data(), &ch->dense_op);
     if (!st) {
@@ -85,9 +111,9 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::RMSNorm: {
     int32_t dim = 0, dtype = 1;
     double eps = 0.0;
-    if (!read_exact(&dim, 1) || !read_exact(&dtype, 1) || !read_exact(&eps, 1)) return false;
+    if (!reader.read(&dim, 1) || !reader.read(&dtype, 1) || !reader.read(&eps, 1)) return false;
     std::vector<float> g(static_cast<std::size_t>(dim));
-    if (!read_exact(g.data(), g.size())) return false;
+    if (!reader.read(g.data(), g.size())) return false;
     welvet::rmsnorm::Config cfg;
     cfg.dim = dim;
     cfg.eps = eps;
@@ -99,9 +125,9 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::LayerNorm: {
     int32_t dim = 0, dtype = 1;
     double eps = 0.0;
-    if (!read_exact(&dim, 1) || !read_exact(&dtype, 1) || !read_exact(&eps, 1)) return false;
+    if (!reader.read(&dim, 1) || !reader.read(&dtype, 1) || !reader.read(&eps, 1)) return false;
     std::vector<float> g(static_cast<std::size_t>(dim)), b(static_cast<std::size_t>(dim));
-    if (!read_exact(g.data(), g.size()) || !read_exact(b.data(), b.size())) return false;
+    if (!reader.read(g.data(), g.size()) || !reader.read(b.data(), b.size())) return false;
     welvet::layernorm::Config cfg;
     cfg.dim = dim;
     cfg.eps = eps;
@@ -112,12 +138,12 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::SwiGLU: {
     int32_t in = 0, inter = 0, dtype = 1;
-    if (!read_exact(&in, 1) || !read_exact(&inter, 1) || !read_exact(&dtype, 1)) return false;
+    if (!reader.read(&in, 1) || !reader.read(&inter, 1) || !reader.read(&dtype, 1)) return false;
     const int ng = inter * in;
     const int nu = inter * in;
     const int nd = in * inter;
     std::vector<float> packed(static_cast<std::size_t>(ng + nu + nd));
-    if (!read_exact(packed.data(), packed.size())) return false;
+    if (!reader.read(packed.data(), packed.size())) return false;
     welvet::swiglu::Config cfg;
     cfg.input_dim = in;
     cfg.intermediate_dim = inter;
@@ -130,8 +156,8 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::Softmax: {
     int32_t dim = 0, dtype = 1, sk = 0;
     double temperature = 1.0;
-    if (!read_exact(&dim, 1) || !read_exact(&dtype, 1) || !read_exact(&sk, 1) ||
-        !read_exact(&temperature, 1)) {
+    if (!reader.read(&dim, 1) || !reader.read(&dtype, 1) || !reader.read(&sk, 1) ||
+        !reader.read(&temperature, 1)) {
       return false;
     }
     welvet::softmax::Config cfg;
@@ -144,12 +170,12 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::Embedding: {
     int32_t vocab = 0, emb = 0, seq = 0, act = -1, dtype = 1;
-    if (!read_exact(&vocab, 1) || !read_exact(&emb, 1) || !read_exact(&seq, 1) ||
-        !read_exact(&act, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&vocab, 1) || !reader.read(&emb, 1) || !reader.read(&seq, 1) ||
+        !reader.read(&act, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     std::vector<float> W(static_cast<std::size_t>(vocab * emb));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     welvet::embedding::Config cfg;
     cfg.vocab_size = vocab;
     cfg.embedding_dim = emb;
@@ -163,9 +189,9 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::MHA: {
     int32_t seq = 0, d_model = 0, num_heads = 0, num_kv = 0, head_dim = 0, msl = 0;
     int32_t mask = 0, pos = 0, dtype = 1;
-    if (!read_exact(&seq, 1) || !read_exact(&d_model, 1) || !read_exact(&num_heads, 1) ||
-        !read_exact(&num_kv, 1) || !read_exact(&head_dim, 1) || !read_exact(&msl, 1) ||
-        !read_exact(&mask, 1) || !read_exact(&pos, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&seq, 1) || !reader.read(&d_model, 1) || !reader.read(&num_heads, 1) ||
+        !reader.read(&num_kv, 1) || !reader.read(&head_dim, 1) || !reader.read(&msl, 1) ||
+        !reader.read(&mask, 1) || !reader.read(&pos, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     const int hd = head_dim > 0 ? head_dim : d_model / num_heads;
@@ -176,8 +202,8 @@ static bool read_child(welvet::stack::Child* ch) {
     std::vector<float> K(static_cast<std::size_t>(kv_dim * d_model));
     std::vector<float> V(static_cast<std::size_t>(kv_dim * d_model));
     std::vector<float> O(static_cast<std::size_t>(d_model * q_dim));
-    if (!read_exact(Q.data(), Q.size()) || !read_exact(K.data(), K.size()) ||
-        !read_exact(V.data(), V.size()) || !read_exact(O.data(), O.size())) {
+    if (!reader.read(Q.data(), Q.size()) || !reader.read(K.data(), K.size()) ||
+        !reader.read(V.data(), V.size()) || !reader.read(O.data(), O.size())) {
       return false;
     }
     welvet::mha::Config cfg = welvet::mha::decoder_causal(d_model, num_heads, kv_heads);
@@ -193,9 +219,9 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::CNN1: {
     int32_t in_ch = 0, filters = 0, seq = 0, kernel = 0, stride = 0, pad = 0, act = 0, dtype = 1;
-    if (!read_exact(&in_ch, 1) || !read_exact(&filters, 1) || !read_exact(&seq, 1) ||
-        !read_exact(&kernel, 1) || !read_exact(&stride, 1) || !read_exact(&pad, 1) ||
-        !read_exact(&act, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&in_ch, 1) || !reader.read(&filters, 1) || !reader.read(&seq, 1) ||
+        !reader.read(&kernel, 1) || !reader.read(&stride, 1) || !reader.read(&pad, 1) ||
+        !reader.read(&act, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::cnn1::Config cfg;
@@ -208,7 +234,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = filters * in_ch * kernel;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::cnn1::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                            &ch->cnn1_op);
     if (!st) return false;
@@ -217,12 +243,12 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::Sequential:
   case welvet::stack::Kind::Residual: {
     int32_t dim = 0, seq = 0, depth = 0, child_act = -1, dtype = 1;
-    if (!read_exact(&dim, 1) || !read_exact(&seq, 1) || !read_exact(&depth, 1) ||
-        !read_exact(&child_act, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&dim, 1) || !reader.read(&seq, 1) || !reader.read(&depth, 1) ||
+        !reader.read(&child_act, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     std::vector<float> W(static_cast<std::size_t>(depth * dim * dim));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     if (ch->kind == welvet::stack::Kind::Sequential) {
       welvet::sequential::Config cfg;
       cfg.dim = dim;
@@ -246,8 +272,8 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::Mamba: {
     int32_t d_model = 0, d_state = 0, expand = 0, seq = 0, dtype = 1;
-    if (!read_exact(&d_model, 1) || !read_exact(&d_state, 1) || !read_exact(&expand, 1) ||
-        !read_exact(&seq, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&d_model, 1) || !reader.read(&d_state, 1) || !reader.read(&expand, 1) ||
+        !reader.read(&seq, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::mamba::Config cfg;
@@ -257,7 +283,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.seq_len = seq;
     const int nw = welvet::mamba::weight_count(cfg);
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st =
         welvet::mamba::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(), &ch->mamba_op);
     if (!st) return false;
@@ -265,7 +291,7 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::Metacognition: {
     int32_t dim = 0, seq = 0, dtype = 1;
-    if (!read_exact(&dim, 1) || !read_exact(&seq, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&dim, 1) || !reader.read(&seq, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::metacognition::Config cfg;
@@ -273,7 +299,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.seq_len = seq == 1 ? 0 : seq;
     const int nw = welvet::metacognition::weight_count(cfg);
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::metacognition::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                                     &ch->metacognition_op);
     if (!st) return false;
@@ -281,9 +307,9 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::GDN: {
     int32_t hidden = 0, seq = 0, nk = 0, nv = 0, hd_k = 0, hd_v = 0, conv_k = 0, dtype = 1;
-    if (!read_exact(&hidden, 1) || !read_exact(&seq, 1) || !read_exact(&nk, 1) ||
-        !read_exact(&nv, 1) || !read_exact(&hd_k, 1) || !read_exact(&hd_v, 1) ||
-        !read_exact(&conv_k, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&hidden, 1) || !reader.read(&seq, 1) || !reader.read(&nk, 1) ||
+        !reader.read(&nv, 1) || !reader.read(&hd_k, 1) || !reader.read(&hd_v, 1) ||
+        !reader.read(&conv_k, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     (void)seq;
@@ -297,7 +323,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.conv_kernel = conv_k;
     const int nw = welvet::gdn::weight_count(cfg);
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::gdn::new_configured(cfg, W.data(), &ch->gdn_op);
     if (!st) return false;
     return true;
@@ -305,9 +331,9 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::KMeans: {
     int32_t k = 0, d = 0, seq = 0, output_mode = 0, act = -1, dtype = 1;
     double temperature = 1.0;
-    if (!read_exact(&k, 1) || !read_exact(&d, 1) || !read_exact(&seq, 1) ||
-        !read_exact(&output_mode, 1) || !read_exact(&act, 1) || !read_exact(&temperature, 1) ||
-        !read_exact(&dtype, 1)) {
+    if (!reader.read(&k, 1) || !reader.read(&d, 1) || !reader.read(&seq, 1) ||
+        !reader.read(&output_mode, 1) || !reader.read(&act, 1) || !reader.read(&temperature, 1) ||
+        !reader.read(&dtype, 1)) {
       return false;
     }
     (void)seq;
@@ -319,7 +345,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = k * d;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st =
         welvet::kmeans::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(), &ch->kmeans_op);
     if (!st) return false;
@@ -328,9 +354,9 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::CNN2: {
     int32_t in_ch = 0, filters = 0, h = 0, w = 0, kernel = 0, stride = 0, pad = 0, act = 0,
             dtype = 1;
-    if (!read_exact(&in_ch, 1) || !read_exact(&filters, 1) || !read_exact(&h, 1) ||
-        !read_exact(&w, 1) || !read_exact(&kernel, 1) || !read_exact(&stride, 1) ||
-        !read_exact(&pad, 1) || !read_exact(&act, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&in_ch, 1) || !reader.read(&filters, 1) || !reader.read(&h, 1) ||
+        !reader.read(&w, 1) || !reader.read(&kernel, 1) || !reader.read(&stride, 1) ||
+        !reader.read(&pad, 1) || !reader.read(&act, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::cnn2::Config cfg;
@@ -344,7 +370,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = filters * in_ch * kernel * kernel;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::cnn2::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                            &ch->cnn2_op);
     if (!st) return false;
@@ -353,10 +379,10 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::CNN3: {
     int32_t in_ch = 0, filters = 0, d = 0, h = 0, w = 0, kernel = 0, stride = 0, pad = 0, act = 0,
             dtype = 1;
-    if (!read_exact(&in_ch, 1) || !read_exact(&filters, 1) || !read_exact(&d, 1) ||
-        !read_exact(&h, 1) || !read_exact(&w, 1) || !read_exact(&kernel, 1) ||
-        !read_exact(&stride, 1) || !read_exact(&pad, 1) || !read_exact(&act, 1) ||
-        !read_exact(&dtype, 1)) {
+    if (!reader.read(&in_ch, 1) || !reader.read(&filters, 1) || !reader.read(&d, 1) ||
+        !reader.read(&h, 1) || !reader.read(&w, 1) || !reader.read(&kernel, 1) ||
+        !reader.read(&stride, 1) || !reader.read(&pad, 1) || !reader.read(&act, 1) ||
+        !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::cnn3::Config cfg;
@@ -371,7 +397,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = filters * in_ch * kernel * kernel * kernel;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::cnn3::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                            &ch->cnn3_op);
     if (!st) return false;
@@ -379,12 +405,12 @@ static bool read_child(welvet::stack::Child* ch) {
   }
   case welvet::stack::Kind::NestedStack: {
     int32_t n_nested = 0;
-    if (!read_exact(&n_nested, 1) || n_nested <= 0) return false;
+    if (!reader.read(&n_nested, 1) || n_nested <= 0) return false;
     ch->nested.clear();
     ch->nested.reserve(static_cast<std::size_t>(n_nested));
     for (int32_t i = 0; i < n_nested; ++i) {
       welvet::stack::Child nested;
-      if (!read_child(&nested)) return false;
+      if (!read_child(reader, &nested)) return false;
       ch->nested.push_back(std::move(nested));
     }
     return true;
@@ -393,9 +419,9 @@ static bool read_child(welvet::stack::Child* ch) {
     // combine, dim, out_feat, seq, sparse_k, disagree_beta f64, n_branches, branches…, has_gate, [gate Dense]
     int32_t combine = 1, dim = 0, out_feat = 0, seq = 0, sparse_k = 0, n_br = 0, has_gate = 0;
     double disagree_beta = 0.0;
-    if (!read_exact(&combine, 1) || !read_exact(&dim, 1) || !read_exact(&out_feat, 1) ||
-        !read_exact(&seq, 1) || !read_exact(&sparse_k, 1) || !read_exact(&disagree_beta, 1) ||
-        !read_exact(&n_br, 1) || n_br <= 0) {
+    if (!reader.read(&combine, 1) || !reader.read(&dim, 1) || !reader.read(&out_feat, 1) ||
+        !reader.read(&seq, 1) || !reader.read(&sparse_k, 1) || !reader.read(&disagree_beta, 1) ||
+        !reader.read(&n_br, 1) || n_br <= 0) {
       return false;
     }
     ch->parallel_nest.combine = combine;
@@ -408,14 +434,14 @@ static bool read_child(welvet::stack::Child* ch) {
     ch->nested.reserve(static_cast<std::size_t>(n_br));
     for (int32_t i = 0; i < n_br; ++i) {
       welvet::stack::Child nested;
-      if (!read_child(&nested)) return false;
+      if (!read_child(reader, &nested)) return false;
       ch->nested.push_back(std::move(nested));
     }
-    if (!read_exact(&has_gate, 1)) return false;
+    if (!reader.read(&has_gate, 1)) return false;
     ch->parallel_nest.has_gate = has_gate;
     if (has_gate) {
       welvet::stack::Child gate_ch;
-      if (!read_child(&gate_ch) || gate_ch.kind != welvet::stack::Kind::Dense) return false;
+      if (!read_child(reader, &gate_ch) || gate_ch.kind != welvet::stack::Kind::Dense) return false;
       ch->dense_op = std::move(gate_ch.dense_op);
     }
     return true;
@@ -423,9 +449,9 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::ConvT1: {
     int32_t in_ch = 0, filters = 0, seq = 0, kernel = 0, stride = 0, pad = 0, out_pad = 0,
             act = 0, dtype = 1;
-    if (!read_exact(&in_ch, 1) || !read_exact(&filters, 1) || !read_exact(&seq, 1) ||
-        !read_exact(&kernel, 1) || !read_exact(&stride, 1) || !read_exact(&pad, 1) ||
-        !read_exact(&out_pad, 1) || !read_exact(&act, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&in_ch, 1) || !reader.read(&filters, 1) || !reader.read(&seq, 1) ||
+        !reader.read(&kernel, 1) || !reader.read(&stride, 1) || !reader.read(&pad, 1) ||
+        !reader.read(&out_pad, 1) || !reader.read(&act, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::convt1::Config cfg;
@@ -439,7 +465,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = filters * in_ch * kernel;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::convt1::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                              &ch->convt1_op);
     if (!st) return false;
@@ -448,10 +474,10 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::ConvT2: {
     int32_t in_ch = 0, filters = 0, h = 0, w = 0, kernel = 0, stride = 0, pad = 0, out_pad = 0,
             act = 0, dtype = 1;
-    if (!read_exact(&in_ch, 1) || !read_exact(&filters, 1) || !read_exact(&h, 1) ||
-        !read_exact(&w, 1) || !read_exact(&kernel, 1) || !read_exact(&stride, 1) ||
-        !read_exact(&pad, 1) || !read_exact(&out_pad, 1) || !read_exact(&act, 1) ||
-        !read_exact(&dtype, 1)) {
+    if (!reader.read(&in_ch, 1) || !reader.read(&filters, 1) || !reader.read(&h, 1) ||
+        !reader.read(&w, 1) || !reader.read(&kernel, 1) || !reader.read(&stride, 1) ||
+        !reader.read(&pad, 1) || !reader.read(&out_pad, 1) || !reader.read(&act, 1) ||
+        !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::convt2::Config cfg;
@@ -466,7 +492,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = filters * in_ch * kernel * kernel;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::convt2::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                              &ch->convt2_op);
     if (!st) return false;
@@ -475,10 +501,10 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::ConvT3: {
     int32_t in_ch = 0, filters = 0, d = 0, h = 0, w = 0, kernel = 0, stride = 0, pad = 0,
             out_pad = 0, act = 0, dtype = 1;
-    if (!read_exact(&in_ch, 1) || !read_exact(&filters, 1) || !read_exact(&d, 1) ||
-        !read_exact(&h, 1) || !read_exact(&w, 1) || !read_exact(&kernel, 1) ||
-        !read_exact(&stride, 1) || !read_exact(&pad, 1) || !read_exact(&out_pad, 1) ||
-        !read_exact(&act, 1) || !read_exact(&dtype, 1)) {
+    if (!reader.read(&in_ch, 1) || !reader.read(&filters, 1) || !reader.read(&d, 1) ||
+        !reader.read(&h, 1) || !reader.read(&w, 1) || !reader.read(&kernel, 1) ||
+        !reader.read(&stride, 1) || !reader.read(&pad, 1) || !reader.read(&out_pad, 1) ||
+        !reader.read(&act, 1) || !reader.read(&dtype, 1)) {
       return false;
     }
     welvet::convt3::Config cfg;
@@ -494,7 +520,7 @@ static bool read_child(welvet::stack::Child* ch) {
     cfg.activation = static_cast<welvet::Activation>(act);
     const int nw = filters * in_ch * kernel * kernel * kernel;
     std::vector<float> W(static_cast<std::size_t>(nw));
-    if (!read_exact(W.data(), W.size())) return false;
+    if (!reader.read(W.data(), W.size())) return false;
     auto st = welvet::convt3::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                              &ch->convt3_op);
     if (!st) return false;
@@ -503,8 +529,8 @@ static bool read_child(welvet::stack::Child* ch) {
   case welvet::stack::Kind::RNN:
   case welvet::stack::Kind::LSTM: {
     int32_t in = 0, hid = 0, seq = 0, dtype = 1;
-    if (!read_exact(&in, 1) || !read_exact(&hid, 1) || !read_exact(&seq, 1) ||
-        !read_exact(&dtype, 1)) {
+    if (!reader.read(&in, 1) || !reader.read(&hid, 1) || !reader.read(&seq, 1) ||
+        !reader.read(&dtype, 1)) {
       return false;
     }
     if (ch->kind == welvet::stack::Kind::RNN) {
@@ -514,7 +540,7 @@ static bool read_child(welvet::stack::Child* ch) {
       cfg.seq_len = seq;
       const int nw = welvet::rnn::weight_count(cfg);
       std::vector<float> W(static_cast<std::size_t>(nw));
-      if (!read_exact(W.data(), W.size())) return false;
+      if (!reader.read(W.data(), W.size())) return false;
       auto st =
           welvet::rnn::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(), &ch->rnn_op);
       if (!st) return false;
@@ -525,7 +551,7 @@ static bool read_child(welvet::stack::Child* ch) {
       cfg.seq_len = seq;
       const int nw = welvet::lstm::weight_count(cfg);
       std::vector<float> W(static_cast<std::size_t>(nw));
-      if (!read_exact(W.data(), W.size())) return false;
+      if (!reader.read(W.data(), W.size())) return false;
       auto st = welvet::lstm::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(),
                                              &ch->lstm_op);
       if (!st) return false;
@@ -634,7 +660,11 @@ int run_mesh_dense_train(int bench_iters, welvet::runtime::step::Credit credit,
       }
     }
     for (const auto& c : cells) {
-      if (!c.enabled) continue;
+      if (!c.enabled) {
+        auto* cell = welvet::architecture::at(g, c.coord.z, c.coord.y, c.coord.x, c.coord.l);
+        cell->meta.is_disabled = true;
+        continue;
+      }
       welvet::dense::Layer layer;
       auto st = welvet::dense::new_layer(c.in, c.out, static_cast<welvet::Activation>(c.act),
                                          static_cast<welvet::DType>(c.dtype), c.W.data(), &layer);
@@ -743,21 +773,22 @@ int run_stepbp(int bench_iters) {
   }
   if (n_children <= 0 || n_ticks <= 0 || batch <= 0) return 1;
 
+  ChildReader initial;
   welvet::stack::Layer stack;
   stack.meta.type = welvet::LayerType::Stack;
   stack.children.resize(static_cast<std::size_t>(n_children));
   for (int32_t i = 0; i < n_children; ++i) {
-    if (!read_child(&stack.children[static_cast<std::size_t>(i)])) {
+    if (!read_child(initial, &stack.children[static_cast<std::size_t>(i)])) {
       std::fprintf(stderr, "welvet_dense_fwd: bad STB1 child %d\n", i);
       return 2;
     }
   }
 
   int32_t x_ndim = 0, t_ndim = 0;
-  if (!read_exact(&x_ndim, 1) || x_ndim <= 0 || x_ndim > 4) return 2;
+  if (!read_exact(&x_ndim, 1) || x_ndim <= 0 || x_ndim > 5) return 2;
   std::vector<int32_t> x_shape(static_cast<std::size_t>(x_ndim));
   if (!read_exact(x_shape.data(), x_shape.size())) return 2;
-  if (!read_exact(&t_ndim, 1) || t_ndim <= 0 || t_ndim > 4) return 2;
+  if (!read_exact(&t_ndim, 1) || t_ndim <= 0 || t_ndim > 5) return 2;
   std::vector<int32_t> t_shape(static_cast<std::size_t>(t_ndim));
   if (!read_exact(t_shape.data(), t_shape.size())) return 2;
   const int x_len = prod_shape(x_shape);
@@ -777,11 +808,19 @@ int run_stepbp(int bench_iters) {
   }
   (void)batch;
 
+  double loss = 0.0;
   auto once = [&]() -> welvet::Status {
-    // Rebuild stack from current children (already mutated) — for bench, re-read not available.
-    // Bench path: run train on a clone of weights is heavy; skip re-init and just time train once.
+    stack = welvet::stack::Layer{};
+    stack.meta.type = welvet::LayerType::Stack;
+    stack.children.resize(static_cast<std::size_t>(n_children));
+    ChildReader replay(&initial.bytes);
+    for (auto& child : stack.children) {
+      if (!read_child(replay, &child)) {
+        return welvet::Status::Err(welvet::StatusCode::Internal, "bad STB1 replay child");
+      }
+    }
     welvet::runtime::line::State st;
-    double loss = 0.0;
+    loss = 0.0;
     for (int32_t t = 0; t < n_ticks; ++t) {
       welvet::TensorF32 xin;
       xin.shape.assign(x_shape.begin(), x_shape.end());
@@ -795,13 +834,11 @@ int run_stepbp(int bench_iters) {
       }
       loss = tick_loss;
     }
-    (void)loss;
     return welvet::Status::Ok();
   };
 
-  double loss = 0.0;
   if (bench_iters > 0) {
-    // Warmup + timed (mutates stack; acceptable for speed smoke).
+    // Warmup + timed; reset the fixture before every run.
     for (int i = 0; i < 2; ++i) {
       auto st = once();
       if (!st) {
@@ -823,21 +860,9 @@ int run_stepbp(int bench_iters) {
     const int32_t iters32 = static_cast<int32_t>(bench_iters);
     if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
   } else {
-    welvet::runtime::line::State st;
-    for (int32_t t = 0; t < n_ticks; ++t) {
-      welvet::TensorF32 xin;
-      xin.shape.assign(x_shape.begin(), x_shape.end());
-      xin.data = xs[static_cast<std::size_t>(t)];
-      welvet::TensorF32 tgt;
-      tgt.shape.assign(t_shape.begin(), t_shape.end());
-      tgt.data = tgts[static_cast<std::size_t>(t)];
-      double tick_loss = 0.0;
-      auto s = welvet::runtime::line::train_mse(stack, &st, xin, tgt, lr, &tick_loss);
-      if (!s) {
-        std::fprintf(stderr, "welvet_dense_fwd: %s\n", s.message.c_str());
-        return 1;
-      }
-      loss = tick_loss;
+    if (auto st = once(); !st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
     }
   }
 

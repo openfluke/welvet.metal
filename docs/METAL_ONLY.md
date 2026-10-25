@@ -24,10 +24,15 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   float64 arithmetic precision or exponent range.
 - Sequential and NestedStack: host scheduling and copies around supported GPU
   children; no host numerical training fallback.
-- Dense volume NormalBP, line FamilyBP, and mesh FamilyBP use GPU kernels.
-  Mesh gradient addition runs on Metal. Line/mesh smoke validation currently
-  covers Float32 Dense, Sequential and NestedStack, not full dtype sign-off.
+- Line FamilyBP uses GPU kernels for all 21 supported families, including all
+  supported dtypes. CNN2/3 and ConvT2/3 have explicit rank-4/rank-5 tests.
+- Mesh gradient addition runs on Metal. Dense mesh-clock is tested at 111/222
+  across all 34 dtypes, at 211 Float32, and with disabled cells/remote links.
+  Shared ModeMeshBP volume Forward+Step fixtures cover all supported families
+  at 222 Float32 and 211 ×34 (GDN Float32 only). Non-Dense mesh-clock BPTT parity
+  remains unverified.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
+  Promoted reductions and transcendentals use float2 before rounding to Float32.
 
 **Validated 2026-10-26:** all 17 NormalBP evidence sections / 128 case checks pass,
 including supported dtype loops, leaves, chains and volumes. Exact bits are
@@ -54,6 +59,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ```sh
 ./scripts/build_macos.sh
 ./scripts/macos_build_w2a.sh --normalbp-all
+./scripts/macos_build_w2a.sh --stepbp-train
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
@@ -61,7 +67,11 @@ Tests and CPU parity references live in sibling `w2a`, not the engine repository
 accumulation, repeated weight updates/cache refresh, Dense volumes, and the
 supported Float32 line/mesh cases. `TestGoVMetalNormalBP` runs all 17 requested
 NormalBP groups / 128 case checks. The combined runner executes both gates and
-defaults to one measured iteration per fixture; set
+defaults to one measured iteration per fixture. The StepBP runner executes
+`TestGoVMetalStepBPTrain` (84 case groups, with dtype sweeps) and `TestGoVMetalOnly`.
+Line benchmark iterations reset all weights/configuration before each run and
+return the real final loss; reset cost is included. Both runners default to one
+measured iteration; set
 `WELVET_METAL_BENCH_ITERS=2000` for longer timing runs.
 
 Shared artifact: `libwelvet_metal.dylib`. Static artifact:
