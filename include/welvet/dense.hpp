@@ -27,4 +27,12 @@ bool dtype_supported_metal_forward(DType dt);
 // decode of FormatNone → double for upload is host prep only, not a compute fallback.
 Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+// NormalBP leaf: dPre = gradOut ⊙ act'(pre); dX = Wᵀ·dPre; dW = outer(dPre, x).
+// Host f64 MatVecT + outer (Go BackwardCPUTiled / welvet.cpp parity). pre = post-bias.
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+
+// Apply dW via weights.ApplySGD (FormatNone native).
+Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
+
 } // namespace welvet::dense

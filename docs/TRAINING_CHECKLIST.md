@@ -17,11 +17,11 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 
 Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the whole mode table) is signed.
 
-**Current engine:** forward/volume FormatNone×34 largely landed; **training (NormalBP + all modes) not started** — every row below is open.
+**Current engine:** forward/volume FormatNone×34 largely landed; **Dense NormalBP** leaf+volume ×34 signed (`WDB1`/`WVN1`). Other NormalBP layers + TrainModes still open.
 
-**Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack volume-fwd still open (no `bind_stack`). Training wires (`*B1`/`*V1` NormalBP, Step/Tween/Mesh, …) are **not** Metal yet.
+**Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack volume-fwd still open (no `bind_stack`).
 
-**Run lines** below name the intended Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`) mirroring cpp `linux_build_w2a.sh`. Those flags land with each suite — until then the row stays `[ ]`.
+**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` is live; other `--*-train` flags land with each suite.
 
 ---
 
@@ -34,13 +34,13 @@ Timing: warm-up + `--bench=N` (in-process; no spawn) → **goµs / mtlµs / spd%
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 ReLU (dX/dW/W/loss) | [ ] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + speed table |
-| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 + speed table |
+| 1 | Leaf Float32 ReLU (dX/dW/W/loss) | [x] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + speed table |
+| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 + speed table |
 
 ## w2a Go↔Metal (RMSNorm NormalBP) — sign-off evidence
 
@@ -443,7 +443,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | `0.02-m2-dense-nbp` |
 | RMSNorm | [ ] | [ ] | [ ] | |
 | LayerNorm | [ ] | [ ] | [ ] | |
 | SwiGLU | [ ] | [ ] | [ ] | |
@@ -467,7 +467,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [ ] | [ ] | [ ] | |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** `0.02-m2-dense-nbp` — Dense NormalBP leaf+volume ×34 exact_bit (`WDB1`/`WVN1`); next RMSNorm.
 
 ---
 
@@ -1343,5 +1343,6 @@ Ship: `runtime/line` `Credit::FamilyTweenSplitSparse` on pop (`apply_sparse_chil
 
 | Tag | Notes |
 |---|---|
-| — | Checklist opened. Forward volume FormatNone×34 largely done; training port not started. Start with **1 — NormalBP / Dense**. |
+| `0.02-m2-dense-nbp` | Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 1×1×1×1 / chain / ×34 / 2×2×2×1 / 2×1×1×1×34 exact_bit (`WDB1`/`WVN1`) |
+| — | Checklist opened. Forward volume FormatNone×34 largely done; training port not started. |
 

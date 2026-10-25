@@ -1,9 +1,106 @@
 #include "welvet/runtime/training.hpp"
 
-namespace welvet::runtime {
+#include "welvet/dense.hpp"
+
+#include <map>
+#include <utility>
+
+namespace welvet::runtime::training {
+namespace {
+
+struct CoordLess {
+  bool operator()(const architecture::Coord& a, const architecture::Coord& b) const {
+    if (a.z != b.z) return a.z < b.z;
+    if (a.y != b.y) return a.y < b.y;
+    if (a.x != b.x) return a.x < b.x;
+    return a.l < b.l;
+  }
+};
+
+} // namespace
+
+Status mse(const TensorF32& pred, const TensorF32& target, double* loss) {
+  if (!loss || pred.data.size() != target.data.size() || pred.data.empty()) {
+    return Status::Err(StatusCode::InvalidArgument, "training: MSE shape");
+  }
+  double sum = 0.0;
+  const std::size_t n = pred.data.size();
+  for (std::size_t i = 0; i < n; ++i) {
+    const double d = static_cast<double>(pred.data[i]) - static_cast<double>(target.data[i]);
+    sum += d * d;
+  }
+  *loss = sum / static_cast<double>(n);
+  return Status::Ok();
+}
+
+Status mse_grad(const TensorF32& pred, const TensorF32& target, TensorF32* grad) {
+  if (!grad || pred.data.size() != target.data.size() || pred.data.empty()) {
+    return Status::Err(StatusCode::InvalidArgument, "training: MSEGrad shape");
+  }
+  *grad = pred;
+  const double scale = 2.0 / static_cast<double>(pred.data.size());
+  for (std::size_t i = 0; i < pred.data.size(); ++i) {
+    const double d = static_cast<double>(pred.data[i]) - static_cast<double>(target.data[i]);
+    grad->data[i] = static_cast<float>(scale * d);
+  }
+  return Status::Ok();
+}
+
+Status sgd_dense(architecture::Grid& g, const forward::Result& fwd, const backward::Result& bwd,
+                 double lr) {
+  if (lr == 0.0) {
+    return Status::Err(StatusCode::InvalidArgument, "training: LR is 0");
+  }
+  std::map<architecture::Coord, const TensorF32*, CoordLess> dw;
+  for (const auto& gw : bwd.grad_ws) {
+    dw[gw.coord] = &gw.dW;
+  }
+  for (const auto& st : fwd.steps) {
+    auto it = dw.find(st.coord);
+    if (it == dw.end() || !it->second) {
+      continue;
+    }
+    architecture::Cell* cell = architecture::at(g, st.coord.z, st.coord.y, st.coord.x, st.coord.l);
+    if (!cell) {
+      return Status::Err(StatusCode::InvalidArgument, "training: SGD missing cell");
+    }
+    if (cell->op_kind != architecture::OpKind::Dense) {
+      return Status::Gap("training: SGD cell Op not yet on Metal (Dense NormalBP first)");
+    }
+    if (auto st_a = dense::apply_grad_sgd(&cell->dense_op, *it->second, lr); !st_a) {
+      return st_a;
+    }
+  }
+  return Status::Ok();
+}
+
+Status step_dense(architecture::Grid& g, const forward::Result& fwd, const TensorF32& target,
+                  double lr, double* loss, backward::Result* bwd_out) {
+  if (!loss) {
+    return Status::Err(StatusCode::InvalidArgument, "training: nil loss");
+  }
+  if (auto st = mse(fwd.output, target, loss); !st) {
+    return st;
+  }
+  TensorF32 gy;
+  if (auto st = mse_grad(fwd.output, target, &gy); !st) {
+    return st;
+  }
+  backward::Result bwd;
+  if (auto st = backward::volume_dense(g, fwd, gy, &bwd); !st) {
+    return st;
+  }
+  if (auto st = sgd_dense(g, fwd, bwd, lr); !st) {
+    return st;
+  }
+  if (bwd_out) {
+    *bwd_out = std::move(bwd);
+  }
+  return Status::Ok();
+}
 
 Status train_stack_gap(TrainMode) {
   return Status::Gap("TrainStackMSE / Step / Mesh / Tween* modes on Metal");
 }
 
-} // namespace welvet::runtime
+} // namespace welvet::runtime::training

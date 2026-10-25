@@ -23,3 +23,7 @@ int run_volume_embedding_fwd(int bench_iters);     // WEG1
 int run_volume_mamba_fwd(int bench_iters);         // MBG1
 int run_volume_gdn_fwd(int bench_iters);           // GDG1
 int run_volume_metacognition_fwd(int bench_iters); // MCG1
+
+// Dense NormalBP (training)
+int run_dense_normalbp(int bench_iters);   // WDB1 → WDBO (+ optional WVB1)
+int run_volume_normalbp(int bench_iters);  // WVN1 → WVNO (+ optional WVB1)

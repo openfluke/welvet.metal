@@ -1255,7 +1255,8 @@ static void usage() {
                "welvet_dense_fwd (welvet.metal)\n"
                "  --version | --identity | --gaps | --help\n"
                "  --bench=N → WVB2 mount_ns+exec_ns for volume wires\n"
-               "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/WRF1/WLF1/WSF1/WPF1/WKF1/WSG1/SQG1…MCG1→WVFO\n");
+               "  stdin WVD3→WVO1 | WVM1→WVMO | … | WVF1/WMV1/…/MCG1→WVFO\n"
+               "       WDB1→WDBO | WVN1→WVNO (Dense NormalBP leaf / volume)\n");
 }
 
 int main(int argc, char** argv) {
@@ -1363,6 +1364,12 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic, "WMC1", 4) == 0) {
     return run_metacognition(bench_iters);
+  }
+  if (std::memcmp(magic, "WDB1", 4) == 0) {
+    return run_dense_normalbp(bench_iters);
+  }
+  if (std::memcmp(magic, "WVN1", 4) == 0) {
+    return run_volume_normalbp(bench_iters);
   }
   if (std::memcmp(magic, "WVF1", 4) == 0) {
     return run_volume_dense_fwd(bench_iters);

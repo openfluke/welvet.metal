@@ -1,9 +1,11 @@
 #include "welvet_c.h"
 
+#include "welvet/dense.hpp"
 #include "welvet/dense_session.hpp"
 #include "welvet/gaps.hpp"
 #include "welvet/metal/device.hpp"
 #include "welvet/metal/matvec.hpp"
+#include "welvet/runtime/training.hpp"
 #include "welvet/mha.hpp"
 #include "welvet/cnn1.hpp"
 #include "welvet/cnn2.hpp"
@@ -108,6 +110,73 @@ welvet_status welvet_dense_forward_f32(int32_t batch, int32_t in, int32_t out, i
   st = welvet_dense_execute(s, x, pre, post);
   welvet_dense_release(s);
   return st;
+}
+
+welvet_status welvet_dense_normalbp_f32(int32_t batch, int32_t in, int32_t out, int32_t act,
+                                        int32_t dtype, int32_t /*backend*/, const float* W_init,
+                                        const double* bias, size_t bias_len, const float* x,
+                                        const float* grad_or_target, int32_t use_target, double lr,
+                                        float* pre, float* post, float* dX, float* dW,
+                                        float* W_after, double* loss) {
+  if (batch <= 0 || in <= 0 || out <= 0 || !W_init || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !W_after || !loss) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "invalid argument");
+    return st;
+  }
+  if (dtype < 0 || dtype >= welvet::kNumDTypes) {
+    welvet_status st{};
+    st.code = 1;
+    std::snprintf(st.message, sizeof(st.message), "bad dtype %d", dtype);
+    return st;
+  }
+
+  welvet::dense::Layer layer;
+  auto st = welvet::dense::new_layer(in, out, static_cast<welvet::Activation>(act),
+                                     static_cast<welvet::DType>(dtype), W_init, &layer);
+  if (!st) return to_c(st);
+  if (bias && bias_len > 0) {
+    layer.weights.bias.assign(bias, bias + bias_len);
+  }
+
+  welvet::TensorF32 input;
+  input.shape = {batch, in};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * in));
+
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::dense::forward_f32(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+
+  welvet::TensorF32 gy;
+  gy.shape = {batch, out};
+  gy.data.assign(grad_or_target, grad_or_target + static_cast<std::size_t>(batch * out));
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::dense::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+
+  if (lr != 0.0) {
+    st = welvet::dense::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = layer.weights.export_f32(W_after);
+  if (!st) return to_c(st);
+
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
 }
 
 welvet_status welvet_mha_forward_f32(int32_t batch, int32_t seq, int32_t d_model, int32_t num_heads,
