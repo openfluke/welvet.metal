@@ -1,3 +1,4 @@
+#include "welvet/metal/training.hpp"
 #include "welvet/runtime/step.hpp"
 
 #include "welvet/runtime/backward.hpp"
@@ -41,22 +42,22 @@ TensorF32 clone_t(const TensorF32& t) {
 
 bool tensor_empty(const TensorF32& t) { return t.data.empty(); }
 
-void accumulate(TensorF32* dst, const TensorF32& src) {
-  if (!dst) return;
+Status accumulate(TensorF32* dst, const TensorF32& src) {
+  if (!dst) return Status::Err(StatusCode::InvalidArgument, "step: nil accumulation buffer");
   if (dst->data.empty()) {
     *dst = clone_t(src);
-    return;
+    return Status::Ok();
   }
-  const std::size_t n = std::min(dst->data.size(), src.data.size());
-  for (std::size_t i = 0; i < n; ++i) {
-    dst->data[i] += src.data[i];
+  if (dst->shape != src.shape || dst->data.size() != src.data.size()) {
+    return Status::Err(StatusCode::InvalidArgument, "step: accumulation shape mismatch");
   }
+  return metal::accumulate_f32(dst->data.data(), src.data.data(), src.data.size());
 }
 
-void accumulate_mesh_grad(architecture::Grid& g, std::vector<TensorF32>& buffers, int idx,
+Status accumulate_mesh_grad(architecture::Grid& g, std::vector<TensorF32>& buffers, int idx,
                           const TensorF32& grad) {
   if (idx < 0 || idx >= static_cast<int>(g.cells.size()) || grad.data.empty()) {
-    return;
+    return Status::Ok();
   }
   architecture::Cell& cell = g.cells[static_cast<std::size_t>(idx)];
   int source_idx = 0;
@@ -68,9 +69,9 @@ void accumulate_mesh_grad(architecture::Grid& g, std::vector<TensorF32>& buffers
     source_idx = 0;
   }
   if (source_idx < 0 || source_idx >= static_cast<int>(buffers.size())) {
-    return;
+    return Status::Ok();
   }
-  accumulate(&buffers[static_cast<std::size_t>(source_idx)], grad);
+  return accumulate(&buffers[static_cast<std::size_t>(source_idx)], grad);
 }
 
 Status apply_one(architecture::Cell* cell, const TensorF32& dW, double lr) {
@@ -263,7 +264,7 @@ Status backward(architecture::Grid& g, State* s, const TensorF32& grad_out, Tens
       architecture::Cell& cell = g.cells[static_cast<std::size_t>(idx)];
       if (cell.meta.is_disabled) {
         if (!tensor_empty(grad_buffers[static_cast<std::size_t>(idx)])) {
-          accumulate_mesh_grad(g, next_grad, idx, grad_buffers[static_cast<std::size_t>(idx)]);
+          if (auto st = accumulate_mesh_grad(g, next_grad, idx, grad_buffers[static_cast<std::size_t>(idx)]); !st) return st;
         }
         continue;
       }
@@ -278,10 +279,10 @@ Status backward(architecture::Grid& g, State* s, const TensorF32& grad_out, Tens
         return Status::Err(st.code, std::string("step bwd: ") + st.message);
       }
       if (layer_dws && !g_w.data.empty()) {
-        accumulate(&(*layer_dws)[static_cast<std::size_t>(idx)], g_w);
+        if (auto st = accumulate(&(*layer_dws)[static_cast<std::size_t>(idx)], g_w); !st) return st;
       }
       if (!g_in.data.empty()) {
-        accumulate_mesh_grad(g, next_grad, idx, g_in);
+        if (auto st = accumulate_mesh_grad(g, next_grad, idx, g_in); !st) return st;
       }
     }
     grad_buffers = std::move(next_grad);

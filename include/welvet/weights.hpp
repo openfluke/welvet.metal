@@ -14,7 +14,7 @@ enum class QuantFormat : int32_t {
   // gap? all other quant.Format values from welvet/quant
 };
 
-// FormatNone store — MatVec accumulates in float64 (Go parity).
+// FormatNone storage/staging. Numerical execution must use Metal dispatch.
 struct WeightStore {
   DType dtype = DType::Float32;
   QuantFormat format = QuantFormat::None;
@@ -35,15 +35,15 @@ struct WeightStore {
   // Decode full matrix to float32 (FormatNone).
   Status export_f32(float* dst) const;
 
-  // y[rows] = W @ x[cols], float64 accumulate then cast to float32.
+  // Legacy host entry: returns Unsupported; use Metal Dense dispatch.
   Status matvec_f32(const float* x, float* y) const;
-  // gx[cols] += W^T @ gy[rows] (float64 accumulate; caller zeros gx).
+  // Legacy host entry: returns Unsupported; use Metal Dense backward.
   Status matvect_f32(const float* gy, float* gx) const;
 
-  // w <- w - lr*dW in native FormatNone storage (Go weights.ApplySGD).
+  // Metal SGD for Float32 FormatNone; other dtypes return Unsupported.
   Status apply_sgd(const double* dW, double lr);
 
-  // Bias ← Bias − lr·dB (float64 host bias; no-op if bias empty). Go ApplyBiasSGD.
+  // Float64 bias SGD is Unsupported; empty bias remains a no-op.
   Status apply_bias_sgd(const double* dB, int n, double lr);
 };
 

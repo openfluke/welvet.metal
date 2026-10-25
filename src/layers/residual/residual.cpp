@@ -11,57 +11,6 @@ struct Layout {
   int in = 0;
 };
 
-Status parse_layout(int in_dim, const TensorF32& input, Layout* lay) {
-  if (!lay || input.data.empty()) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: empty input");
-  }
-  lay->in = in_dim;
-  if (input.shape.size() == 2) {
-    lay->batch = static_cast<int>(input.shape[0]);
-    lay->seq = 1;
-    if (static_cast<int>(input.shape[1]) != in_dim) {
-      return Status::Err(StatusCode::InvalidArgument, "residual: width != Dim");
-    }
-  } else if (input.shape.size() == 3) {
-    lay->batch = static_cast<int>(input.shape[0]);
-    lay->seq = static_cast<int>(input.shape[1]);
-    if (static_cast<int>(input.shape[2]) != in_dim) {
-      return Status::Err(StatusCode::InvalidArgument, "residual: last dim != Dim");
-    }
-  } else {
-    return Status::Err(StatusCode::InvalidArgument, "residual: need [batch,in] or [batch,seq,in]");
-  }
-  if (lay->batch <= 0 || lay->seq <= 0) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: invalid batch/seq");
-  }
-  const int want = lay->batch * lay->seq * lay->in;
-  if (static_cast<int>(input.data.size()) < want) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: data short");
-  }
-  return Status::Ok();
-}
-
-TensorF32 flatten(const TensorF32& input, const Layout& lay) {
-  TensorF32 out;
-  const int bs = lay.batch * lay.seq;
-  out.shape = {bs, lay.in};
-  out.data.assign(input.data.begin(),
-                  input.data.begin() + static_cast<std::ptrdiff_t>(bs * lay.in));
-  return out;
-}
-
-TensorF32 unflatten(const TensorF32& flat, const Layout& lay, int last) {
-  TensorF32 out;
-  if (lay.seq == 1) {
-    out.shape = {lay.batch, last};
-  } else {
-    out.shape = {lay.batch, lay.seq, last};
-  }
-  const int n = lay.batch * lay.seq * last;
-  out.data.assign(flat.data.begin(), flat.data.begin() + static_cast<std::ptrdiff_t>(n));
-  return out;
-}
-
 } // namespace
 
 int weight_count(const Config& cfg) {
@@ -109,47 +58,7 @@ Status new_configured(const Config& cfg_in, DType dt, Activation child_act,
 }
 
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post) {
-  if (!pre || !post) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: nil pre/post");
-  }
-  Config cfg = layer.cfg;
-  if (auto st = validate(&cfg); !st) return st;
-
-  if (layer.children.empty()) {
-    *pre = input;
-    *post = input;
-    return Status::Ok();
-  }
-
-  Layout lay;
-  if (auto st = parse_layout(cfg.dim, input, &lay); !st) return st;
-
-  TensorF32 x_flat = flatten(input, lay);
-  TensorF32 current = x_flat;
-  TensorF32 last_pre;
-  for (std::size_t i = 0; i < layer.children.size(); ++i) {
-    auto& ch = layer.children[i];
-    TensorF32 p, o;
-    if (auto st = dense::forward_f32(ch, current, &p, &o); !st) {
-      return Status::Err(st.code, std::string("residual F fwd child ") + std::to_string(i) + ": " +
-                                      st.message);
-    }
-    last_pre = std::move(p);
-    current = std::move(o);
-  }
-
-  // y = F(x) + x via f64 round-trip (matches Go AsFloat64 + FromFloat64).
-  TensorF32 y;
-  y.shape = current.shape;
-  y.data.resize(current.data.size());
-  for (std::size_t i = 0; i < current.data.size(); ++i) {
-    y.data[i] = static_cast<float>(static_cast<double>(current.data[i]) +
-                                   static_cast<double>(x_flat.data[i]));
-  }
-
-  *pre = unflatten(last_pre, lay, cfg.dim);
-  *post = unflatten(y, lay, cfg.dim);
-  return Status::Ok();
+  return Status::Err(StatusCode::Unsupported, "residual.forward: Metal kernel not implemented; CPU execution is forbidden");
 }
 
 int grad_w_size(const Layer& layer) {
@@ -162,106 +71,11 @@ int grad_w_size(const Layer& layer) {
 
 Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
                     const TensorF32& /*pre*/, TensorF32* grad_in, TensorF32* grad_w) {
-  if (!grad_in || !grad_w) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: nil grad out");
-  }
-  Config cfg = layer.cfg;
-  if (auto st = validate(&cfg); !st) return st;
-
-  Layout lay;
-  if (auto st = parse_layout(cfg.dim, input, &lay); !st) return st;
-  const int want_out = lay.batch * lay.seq * cfg.dim;
-  if (static_cast<int>(grad_out.data.size()) < want_out) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: gradOut short");
-  }
-
-  TensorF32 gy = flatten(grad_out, lay);
-  TensorF32 x_flat = flatten(input, lay);
-
-  if (layer.children.empty()) {
-    *grad_in = unflatten(gy, lay, cfg.dim);
-    grad_w->shape = {1, 0};
-    grad_w->data.clear();
-    return Status::Ok();
-  }
-
-  const int n = static_cast<int>(layer.children.size());
-  std::vector<TensorF32> ins(static_cast<std::size_t>(n));
-  std::vector<TensorF32> pres(static_cast<std::size_t>(n));
-  TensorF32 current = x_flat;
-  for (int i = 0; i < n; ++i) {
-    ins[static_cast<std::size_t>(i)] = current;
-    auto& ch = layer.children[static_cast<std::size_t>(i)];
-    TensorF32 p, o;
-    if (auto st = dense::forward_f32(ch, current, &p, &o); !st) {
-      return Status::Err(st.code, std::string("residual F recompute child ") + std::to_string(i) +
-                                      ": " + st.message);
-    }
-    pres[static_cast<std::size_t>(i)] = std::move(p);
-    current = std::move(o);
-  }
-
-  std::vector<TensorF32> d_ws(static_cast<std::size_t>(n));
-  TensorF32 g_fx = gy;
-  for (int i = n - 1; i >= 0; --i) {
-    auto& ch = layer.children[static_cast<std::size_t>(i)];
-    TensorF32 gx, dw;
-    if (auto st = dense::backward_f32(ch, g_fx, ins[static_cast<std::size_t>(i)],
-                                      pres[static_cast<std::size_t>(i)], &gx, &dw);
-        !st) {
-      return Status::Err(st.code, std::string("residual F bwd child ") + std::to_string(i) + ": " +
-                                      st.message);
-    }
-    d_ws[static_cast<std::size_t>(i)] = std::move(dw);
-    g_fx = std::move(gx);
-  }
-
-  TensorF32 gin;
-  gin.shape = g_fx.shape;
-  gin.data.resize(g_fx.data.size());
-  for (std::size_t i = 0; i < g_fx.data.size(); ++i) {
-    gin.data[i] = static_cast<float>(static_cast<double>(g_fx.data[i]) +
-                                     static_cast<double>(gy.data[i]));
-  }
-  *grad_in = unflatten(gin, lay, cfg.dim);
-
-  const int need = grad_w_size(layer);
-  grad_w->shape = {1, need};
-  grad_w->data.resize(static_cast<std::size_t>(need));
-  int off = 0;
-  for (int i = 0; i < n; ++i) {
-    const int cn = layer.children[static_cast<std::size_t>(i)].weights.rows *
-                   layer.children[static_cast<std::size_t>(i)].weights.cols;
-    if (static_cast<int>(d_ws[static_cast<std::size_t>(i)].data.size()) < cn) {
-      return Status::Err(StatusCode::InvalidArgument, "residual: short child dW");
-    }
-    for (int j = 0; j < cn; ++j) {
-      grad_w->data[static_cast<std::size_t>(off + j)] =
-          d_ws[static_cast<std::size_t>(i)].data[static_cast<std::size_t>(j)];
-    }
-    off += cn;
-  }
-  return Status::Ok();
+  return Status::Err(StatusCode::Unsupported, "residual.backward_f32: Metal kernel not implemented; CPU execution is forbidden");
 }
 
 Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
-  if (!layer) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: ApplyGradSGD nil");
-  }
-  const int need = grad_w_size(*layer);
-  if (static_cast<int>(dW.data.size()) < need) {
-    return Status::Err(StatusCode::InvalidArgument, "residual: dW short");
-  }
-  int off = 0;
-  for (auto& ch : layer->children) {
-    const int cn = ch.weights.rows * ch.weights.cols;
-    TensorF32 slice;
-    slice.shape = {ch.weights.rows, ch.weights.cols};
-    slice.data.assign(dW.data.begin() + off, dW.data.begin() + off + cn);
-    if (auto st = dense::apply_grad_sgd(&ch, slice, lr); !st) return st;
-    off += cn;
-  }
-  return Status::Ok();
+  return Status::Err(StatusCode::Unsupported, "residual.apply_grad_sgd: Metal kernel not implemented; CPU execution is forbidden");
 }
 
 Status export_packed_f32(const Layer& layer, float* dst) {

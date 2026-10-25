@@ -16,8 +16,6 @@ enum class Activation : int32_t {
   ReLU2 = 6,
 };
 
-// Pointwise activation in float64 space (same as Go core.Activate).
-double activate_f64(double x, Activation act);
-double activate_deriv_f64(double x, Activation act);
+// Activation arithmetic belongs to Metal kernels; this header only defines ABI IDs.
 
 } // namespace welvet

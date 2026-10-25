@@ -69,7 +69,7 @@ Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, T
 Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
                     const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
 
-// Apply dW via weights.ApplySGD (FormatNone native); invalidates resident GPU W.
+// Metal SGD for Float32 FormatNone only; invalidates the resident mirror after export.
 Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr);
 
 // Force-decode FormatNone → soft-double into resident buffers (or mount). Used by bench reset.

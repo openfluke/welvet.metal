@@ -1,3 +1,4 @@
+#include "welvet/metal/training.hpp"
 #include "welvet/runtime/training.hpp"
 
 #include "welvet/cnn1.hpp"
@@ -40,29 +41,20 @@ struct CoordLess {
 } // namespace
 
 Status mse(const TensorF32& pred, const TensorF32& target, double* loss) {
-  if (!loss || pred.data.size() != target.data.size() || pred.data.empty()) {
+  if (!loss || pred.shape != target.shape || pred.data.size() != target.data.size() || pred.data.empty()) {
     return Status::Err(StatusCode::InvalidArgument, "training: MSE shape");
   }
-  double sum = 0.0;
-  const std::size_t n = pred.data.size();
-  for (std::size_t i = 0; i < n; ++i) {
-    const double d = static_cast<double>(pred.data[i]) - static_cast<double>(target.data[i]);
-    sum += d * d;
-  }
-  *loss = sum / static_cast<double>(n);
-  return Status::Ok();
+  return metal::mse_f32(pred.data.data(), target.data.data(), pred.data.size(), loss, nullptr);
 }
 
 Status mse_grad(const TensorF32& pred, const TensorF32& target, TensorF32* grad) {
-  if (!grad || pred.data.size() != target.data.size() || pred.data.empty()) {
+  if (!grad || pred.shape != target.shape || pred.data.size() != target.data.size() || pred.data.empty()) {
     return Status::Err(StatusCode::InvalidArgument, "training: MSEGrad shape");
   }
-  *grad = pred;
-  const double scale = 2.0 / static_cast<double>(pred.data.size());
-  for (std::size_t i = 0; i < pred.data.size(); ++i) {
-    const double d = static_cast<double>(pred.data[i]) - static_cast<double>(target.data[i]);
-    grad->data[i] = static_cast<float>(scale * d);
-  }
+  TensorF32 result = pred;
+  if (auto st = metal::mse_f32(pred.data.data(), target.data.data(), pred.data.size(), nullptr,
+                             result.data.data()); !st) return st;
+  *grad = std::move(result);
   return Status::Ok();
 }
 

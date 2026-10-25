@@ -18,6 +18,7 @@ echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
 MODE=""
 for arg in "$@"; do
   case "$arg" in
+    --metal-only) MODE="metal_only" ;;
     --dense-train) MODE="dense_train" ;;
     --rmsnorm-train) MODE="rmsnorm_train" ;;
     --layernorm-train) MODE="layernorm_train" ;;
@@ -37,12 +38,17 @@ for arg in "$@"; do
     --stack-train) MODE="stack_train" ;;
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
-      echo "usage: $0 [--dense-train|…|--stack-train|--stepbp-train]"
+      echo "usage: $0 [--metal-only|--dense-train|…|--stack-train|--stepbp-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
   esac
 done
+
+if [[ "$MODE" == "metal_only" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalOnly$' -timeout 10m
+  exit 0
+fi
 
 if [[ "$MODE" == "dense_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalDenseTrain$' -timeout 60m

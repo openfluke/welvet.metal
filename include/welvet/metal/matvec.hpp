@@ -22,7 +22,7 @@ inline void split_double(double d, float* hi, float* lo) {
 }
 
 // ---- Resident GPU session (mount vs execute) ----
-// W/bias stay on Metal across forwards. Reload W after host SGD; export is caller's job.
+// W/bias stay on Metal across forwards. Reload the mirror after Metal SGD exports updated FormatNone storage.
 
 struct ResidentDense {
   void* buf_w = nullptr;    // id<MTLBuffer> float2 W[rows*cols]

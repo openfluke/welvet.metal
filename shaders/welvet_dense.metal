@@ -189,3 +189,68 @@ kernel void welvet_dense_outer_batch(
   }
   dW[gid] = sd_to_float(acc);
 }
+
+// Training kernels. Float2 is explicit ALU scratch, never native dtype storage.
+inline float2 sd_mul(float2 a, float2 b) {
+  return sd_add(sd_mul_float(a, b.x), sd_mul_float(a, b.y));
+}
+
+inline float2 sd_div_uint(float2 a, uint n) {
+  const float2 d = sd_two_sum(float(n & 0xffff0000u), float(n & 0xffffu));
+  const float q = a.x / d.x;
+  const float2 residual = sd_add(a, -sd_mul_float(d, q));
+  return sd_add(float2(q, 0.0f), float2((residual.x + residual.y) / d.x, 0.0f));
+}
+
+// Serial reduction preserves a stable element order. A parallel reduction is future work.
+kernel void welvet_mse_loss(device const float* pred [[buffer(0)]],
+                            device const float* target [[buffer(1)]],
+                            device float2* loss [[buffer(2)]],
+                            constant uint& n [[buffer(3)]],
+                            uint gid [[thread_position_in_grid]]) {
+  if (gid != 0) return;
+  float2 sum = float2(0.0f);
+  for (uint i = 0; i < n; ++i) {
+    const float2 d = sd_two_sum(pred[i], -target[i]);
+    sum = sd_add(sum, sd_mul(d, d));
+  }
+  loss[0] = sd_div_uint(sum, n);
+}
+
+kernel void welvet_mse_grad(device const float* pred [[buffer(0)]],
+                            device const float* target [[buffer(1)]],
+                            device float* grad [[buffer(2)]],
+                            constant uint& n [[buffer(3)]],
+                            uint gid [[thread_position_in_grid]]) {
+  if (gid >= n) return;
+  const float2 d = sd_two_sum(pred[gid], -target[gid]);
+  grad[gid] = sd_to_float(sd_div_uint(sd_mul_float(d, 2.0f), n));
+}
+
+kernel void welvet_sgd_f32(device float* weights [[buffer(0)]],
+                           device const float* grad [[buffer(1)]],
+                           constant float2& lr [[buffer(2)]],
+                           constant uint& n [[buffer(3)]],
+                           uint gid [[thread_position_in_grid]]) {
+  if (gid >= n) return;
+  // Go Float32 ApplySGD rounds the step before subtraction.
+  const float step = sd_to_float(sd_mul_float(lr, grad[gid]));
+  weights[gid] = weights[gid] - step;
+}
+
+kernel void welvet_sgd_f32_f64_grad(device float* weights [[buffer(0)]],
+                                    device const float2* grad [[buffer(1)]],
+                                    constant float2& lr [[buffer(2)]],
+                                    constant uint& n [[buffer(3)]],
+                                    uint gid [[thread_position_in_grid]]) {
+  if (gid >= n) return;
+  const float step = sd_to_float(sd_mul(lr, grad[gid]));
+  weights[gid] = weights[gid] - step;
+}
+
+kernel void welvet_accumulate_f32(device float* dst [[buffer(0)]],
+                                  device const float* src [[buffer(1)]],
+                                  constant uint& n [[buffer(2)]],
+                                  uint gid [[thread_position_in_grid]]) {
+  if (gid < n) dst[gid] = dst[gid] + src[gid];
+}

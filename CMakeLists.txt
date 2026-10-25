@@ -30,7 +30,6 @@ include(GNUInstallDirs)
 set(WELVET_CORE_SOURCES
   src/core/status.cpp
   src/core/dtype.cpp
-  src/core/activate.cpp
   src/core/tensor.cpp
   src/core/float_codecs.cpp
   src/metal/device.mm
@@ -38,6 +37,7 @@ set(WELVET_CORE_SOURCES
   src/metal/pipeline.mm
   src/metal/library.mm
   src/metal/matvec.mm
+  src/metal/training.mm
   src/weights/store.cpp
   src/weights/native_codec.cpp
   src/layers/dense/dense.cpp
@@ -104,13 +104,12 @@ target_link_libraries(welvet_metal_obj
     "-framework Foundation"
 )
 
-# Embed / locate .metal sources next to the binary for runtime compilation (M0).
-# Later milestones may switch to precompiled .metallib via xcrun metal / metallib.
-set(WELVET_SHADER_DIR "${CMAKE_CURRENT_SOURCE_DIR}/shaders")
-target_compile_definitions(welvet_metal_obj
-  PRIVATE
-    WELVET_SHADER_DIR="${WELVET_SHADER_DIR}"
-)
+# Embed source so static/shared Metal artifacts work without the checkout.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${CMAKE_CURRENT_SOURCE_DIR}/shaders/welvet_dense.metal")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/shaders/welvet_dense.metal" WELVET_METAL_SOURCE)
+configure_file(cmake/embedded_shaders.hpp.in generated/embedded_shaders.hpp @ONLY)
+target_include_directories(welvet_metal_obj PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 if(WELVET_BUILD_SHARED)
   add_library(welvet SHARED $<TARGET_OBJECTS:welvet_metal_obj>)
@@ -156,4 +155,4 @@ if(WELVET_BUILD_TOOLS)
 endif()
 
 message(STATUS "welvet.metal platform: ${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}")
-message(STATUS "ANE stub=${WELVET_ENABLE_ANE} shaders=${WELVET_SHADER_DIR}")
+message(STATUS "ANE stub=${WELVET_ENABLE_ANE}; Metal shaders embedded")

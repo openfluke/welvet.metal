@@ -22,51 +22,11 @@ Status WeightStore::make(int rows, int cols, DType dt, const float* init_or_null
 }
 
 Status WeightStore::matvec_f32(const float* x, float* y) const {
-  if (!x || !y) {
-    return Status::Err(StatusCode::InvalidArgument, "weights: nil ptr");
-  }
-  if (format != QuantFormat::None) {
-    return Status::Gap("weights.MatVec packed quant formats");
-  }
-  std::vector<double> w_row(static_cast<std::size_t>(cols));
-  for (int r = 0; r < rows; ++r) {
-    if (auto st = decode_row_f64(r, w_row.data()); !st) {
-      return st;
-    }
-    double sum = 0.0;
-    for (int c = 0; c < cols; ++c) {
-      sum += w_row[static_cast<std::size_t>(c)] * static_cast<double>(x[c]);
-    }
-    y[r] = static_cast<float>(sum);
-  }
-  return Status::Ok();
+  return Status::Err(StatusCode::Unsupported, "weights.matvec_f32: use Metal Dense dispatch; CPU execution is forbidden");
 }
 
 Status WeightStore::matvect_f32(const float* gy, float* gx) const {
-  if (!gy || !gx) {
-    return Status::Err(StatusCode::InvalidArgument, "weights: nil ptr");
-  }
-  if (format != QuantFormat::None) {
-    return Status::Gap("weights.MatVecT packed quant formats");
-  }
-  std::vector<double> w_row(static_cast<std::size_t>(cols));
-  std::vector<double> acc(static_cast<std::size_t>(cols), 0.0);
-  for (int r = 0; r < rows; ++r) {
-    const double g = static_cast<double>(gy[r]);
-    if (g == 0.0) {
-      continue;
-    }
-    if (auto st = decode_row_f64(r, w_row.data()); !st) {
-      return st;
-    }
-    for (int c = 0; c < cols; ++c) {
-      acc[static_cast<std::size_t>(c)] += w_row[static_cast<std::size_t>(c)] * g;
-    }
-  }
-  for (int c = 0; c < cols; ++c) {
-    gx[c] = static_cast<float>(static_cast<double>(gx[c]) + acc[static_cast<std::size_t>(c)]);
-  }
-  return Status::Ok();
+  return Status::Err(StatusCode::Unsupported, "weights.matvect_f32: use Metal Dense dispatch; CPU execution is forbidden");
 }
 
 Status WeightStore::export_f32(float* dst) const {

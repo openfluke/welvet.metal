@@ -1,0 +1,3 @@
+#pragma once
+// Generated from shaders/welvet_dense.metal; runtime execution needs no source tree.
+inline constexpr char kWelvetMetalSource[] = R"WELVET_METAL(@WELVET_METAL_SOURCE@)WELVET_METAL";

@@ -23,6 +23,14 @@
 
 **Note:** Apple Metal has **no hardware float64**. Soft-double (float2) matches Go’s f64 MatVec when fast-math is off. Tiny shapes are dispatch-bound (~400µs) — C++ wins those; larger shapes are next for Metal speed.
 
+## GPU-only correction (2026-10-25)
+
+CPU-backed layer entries are now unsupported. `--gaps` reports them as pending,
+even when their old host implementations passed Go parity. Dense Float32 SGD,
+MSE/MSEGrad, and mesh gradient accumulation now execute Metal kernels. Dense
+forward/backward retain FormatNone staging for all 34 dtypes; other update dtypes
+are unsupported. See [METAL_ONLY.md](docs/METAL_ONLY.md).
+
 ## Open
 
 NormalBP, remaining layers, quants, volumes, train modes, systems, model/IO, … — see [README.md](README.md).

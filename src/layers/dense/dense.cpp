@@ -1,3 +1,4 @@
+#include "welvet/metal/training.hpp"
 #include "welvet/dense.hpp"
 
 #include "welvet/activate.hpp"
@@ -129,13 +130,14 @@ Status forward_f32(const Layer& layer, const TensorF32& input, TensorF32* pre, T
                        std::string("dense Metal unsupported dtype ") +
                            std::string(dtype_name(layer.weights.dtype)));
   }
-  if (input.shape.size() < 2) {
+  if (input.shape.size() != 2) {
     return Status::Err(StatusCode::InvalidArgument, "dense: input shape need [batch,in]");
   }
   const int batch = static_cast<int>(input.shape[0]);
   const int in = layer.input_height;
   const int out = layer.output_height;
-  if (static_cast<int>(input.shape[1]) != in) {
+  if (batch <= 0 || input.data.size() != static_cast<std::size_t>(batch) * in ||
+      static_cast<int>(input.shape[1]) != in) {
     return Status::Err(StatusCode::InvalidArgument, "dense: input width mismatch");
   }
   if (layer.weights.rows != out || layer.weights.cols != in) {
@@ -155,13 +157,16 @@ Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF
   if (!grad_in || !grad_w) {
     return Status::Err(StatusCode::InvalidArgument, "dense: nil grad out");
   }
-  if (input.shape.size() < 2 || grad_out.shape.size() < 2 || pre.shape.size() < 2) {
+  if (input.shape.size() != 2 || grad_out.shape.size() != 2 || pre.shape.size() != 2) {
     return Status::Err(StatusCode::InvalidArgument, "dense: bad shapes");
   }
   const int batch = static_cast<int>(input.shape[0]);
   const int in = layer.input_height;
   const int out = layer.output_height;
-  if (static_cast<int>(input.shape[1]) != in || static_cast<int>(grad_out.shape[0]) != batch ||
+  if (batch <= 0 || input.data.size() != static_cast<std::size_t>(batch) * in ||
+      pre.data.size() != static_cast<std::size_t>(batch) * out ||
+      grad_out.data.size() != static_cast<std::size_t>(batch) * out ||
+      static_cast<int>(input.shape[1]) != in || static_cast<int>(grad_out.shape[0]) != batch ||
       static_cast<int>(grad_out.shape[1]) != out || static_cast<int>(pre.shape[0]) != batch ||
       static_cast<int>(pre.shape[1]) != out) {
     return Status::Err(StatusCode::InvalidArgument, "dense: bwd shape mismatch");
@@ -179,19 +184,17 @@ Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF
 }
 
 Status apply_grad_sgd(Layer* layer, const TensorF32& dW, double lr) {
-  if (!layer) {
-    return Status::Err(StatusCode::InvalidArgument, "dense: ApplyGradSGD nil");
+  if (!layer) return Status::Err(StatusCode::InvalidArgument, "dense: nil SGD layer");
+  auto& w = layer->weights;
+  if (w.dtype != DType::Float32 || w.format != QuantFormat::None) {
+    return Status::Err(StatusCode::Unsupported,
+                       "dense: Metal SGD supports Float32 FormatNone only; CPU execution is forbidden");
   }
-  const int n = layer->weights.rows * layer->weights.cols;
-  if (static_cast<int>(dW.data.size()) < n) {
-    return Status::Err(StatusCode::InvalidArgument, "dense: dW short");
+  const auto n = static_cast<std::size_t>(w.rows) * w.cols;
+  if (n == 0 || w.f32.size() != n || dW.data.size() != n) {
+    return Status::Err(StatusCode::InvalidArgument, "dense: SGD size mismatch");
   }
-  std::vector<double> buf(static_cast<std::size_t>(n));
-  for (int i = 0; i < n; ++i) {
-    buf[static_cast<std::size_t>(i)] = static_cast<double>(dW.data[static_cast<std::size_t>(i)]);
-  }
-  if (auto st = layer->weights.apply_sgd(buf.data(), lr); !st) return st;
-  // FormatNone truth moved; soft-double mirror must reload before next forward.
+  if (auto st = metal::sgd_f32(w.f32.data(), dW.data.data(), n, lr); !st) return st;
   layer->invalidate_gpu();
   return Status::Ok();
 }

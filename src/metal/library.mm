@@ -3,6 +3,7 @@
 
 #include "welvet/metal/library.hpp"
 #include "metal/internal.hpp"
+#include "embedded_shaders.hpp"
 
 #include <fstream>
 #include <mutex>
@@ -15,13 +16,6 @@ std::mutex g_lib_mu;
 id<MTLLibrary> g_lib = nil;
 std::string g_path;
 
-std::string default_shader_path() {
-#ifdef WELVET_SHADER_DIR
-  return std::string(WELVET_SHADER_DIR) + "/welvet_dense.metal";
-#else
-  return "shaders/welvet_dense.metal";
-#endif
-}
 
 std::string read_file(const std::string& path) {
   std::ifstream in(path);
@@ -37,7 +31,7 @@ welvet::Status compile_at(const std::string& path) {
     return welvet::Status::Err(welvet::StatusCode::Unsupported, "Metal device unavailable");
   }
 
-  std::string src = read_file(path);
+  std::string src = path.empty() ? std::string(kWelvetMetalSource) : read_file(path);
   if (src.empty()) {
     return welvet::Status::Err(welvet::StatusCode::Internal,
                                "cannot read Metal shader source: " + path);
@@ -57,7 +51,7 @@ welvet::Status compile_at(const std::string& path) {
     return welvet::Status::Err(welvet::StatusCode::Internal, msg);
   }
   g_lib = lib;
-  g_path = path;
+  g_path = path.empty() ? "embedded:welvet_dense.metal" : path;
   return welvet::Status::Ok();
 }
 
@@ -74,7 +68,7 @@ namespace welvet::metal {
 Status library_ensure_loaded() {
   std::lock_guard<std::mutex> lock(g_lib_mu);
   if (g_lib) return Status::Ok();
-  return compile_at(default_shader_path());
+  return compile_at("");
 }
 
 bool library_ready() {
@@ -84,14 +78,13 @@ bool library_ready() {
 
 std::string library_source_path() {
   std::lock_guard<std::mutex> lock(g_lib_mu);
-  return g_path.empty() ? default_shader_path() : g_path;
+  return g_path.empty() ? "embedded:welvet_dense.metal" : g_path;
 }
 
 Status library_reload(std::string_view optional_override_path) {
   std::lock_guard<std::mutex> lock(g_lib_mu);
   g_lib = nil;
-  const std::string path = optional_override_path.empty() ? default_shader_path()
-                                                          : std::string(optional_override_path);
+  const std::string path(optional_override_path);
   return compile_at(path);
 }
 

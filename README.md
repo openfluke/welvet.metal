@@ -1,5 +1,17 @@
 # welvet.metal — Welvet (3D volumetric AI engine) on Apple Metal
 
+**GPU-only enforcement (2026-10-25):** CPU-backed numerical paths have been
+retired. Supported compute is Dense forward/backward, Metal MSE/MSEGrad,
+Float32 FormatNone Metal SGD, and Metal mesh gradient accumulation.
+Sequential and NestedStack can schedule supported Dense children. Other layers
+return `Unsupported` until their Metal kernels exist. Historical parity results
+from host implementations do not establish GPU support. See
+[the current execution contract](docs/METAL_ONLY.md) before the roadmap below.
+
+`welvet.metal` and `welvet.cpp` are **separate native backends** for Go Welvet.
+Neither backend is compiled into the other.
+
+
 **welvet.metal is a full rebuild of Welvet — the 3D volumetric AI engine — in C++ / Apple Metal.** Same engine shape as Go Welvet: numerical types, layers, volumetric architecture (cells in a 3D grid), forward/backward, training modes, systems, model loading, inference, checkpoints. Execution is Metal compute + resident `MTLBuffer`s. Host orchestration is C++ (ObjC++ at the Metal boundary).
 
 A `1 × 1 × 1` volume is the ordinary single-cell neural-network case (layers inside that cell). Larger volumes connect cells that each hold their own layer stacks. This Metal rebuild must own and execute that same topology — not “a Dense GEMV demo with a GPU sticker.”

@@ -5,7 +5,7 @@ One **TrainMode** at a time. Finish that mode’s table (or the rows you care ab
 Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).  
 `inherit` (0) = resolve-only — not a ship target.
 
-**Port mirror of** [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md). Same cases / wires / column meanings; status here is **Metal** only. cpp `[x]` does **not** transfer credit.
+**Port mirror of** [`welvet.cpp/docs/TRAINING_CHECKLIST.md`](../../welvet.cpp/docs/TRAINING_CHECKLIST.md). Same cases / wires / column meanings; status here is **Metal** only. cpp `[ ]` does **not** transfer credit.
 
 ---
 
@@ -14,33 +14,21 @@ Canonical enum: Go `layers/parallel/train_mode.go` (`TrainMode`).
 **welvet.metal = GPU Metal compute only.** Host/CPU math belongs in **welvet.cpp** (and Go).  
 Any host loop left in this tree is **tech debt** until the ✓/✗ table below is all ✓.
 
-Legend: **✓** = GPU Metal kernel · **✗** = still host/CPU · **✓/✗** = Dense GPU + host glue.
+Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 
-| Layer | Fwd | Bwd | Notes / debt |
-|---|:---:|:---:|---|
-| Dense | ✓ | ✓ | soft-double GEMV + **Metal act′/MatVecT/outer** (SGD still FormatNone host→reload) |
-| SwiGLU | ✓/✗ | ✓/✗ | Dense projs GPU fwd+bwd; SiLU / SiLU′ still host |
-| MHA | ✓/✗ | ✓/✗ | Q/K/V/O Dense GPU fwd+bwd; attn + RoPEᵀ still host |
-| CNN1/2/3 | ✓/✗ | ✓/✗ | im2col host → Dense GPU; Dense bwd GPU; col2im host |
-| RNN | ✓/✗ | ✓/✗ | Dense GPU fwd+bwd; tanh′ / BPTT glue host |
-| LSTM | ✓/✗ | ✓/✗ | Dense GPU fwd+bwd; gate′ / BPTT glue host |
-| Sequential | ✓ | ✓ | child Dense GPU fwd+bwd (chain is Dense-only) |
-| Residual | ✓/✗ | ✓/✗ | F Dense GPU fwd+bwd; skip-add host |
-| NestedStack | ✓ | ✓ | nested Dense GPU fwd+bwd |
-| Mamba | ✓/✗ | ✓/✗ | In/Out Dense GPU fwd+bwd; scan still host |
-| Metacognition | ✓/✗ | ✓/✗ | Observed Dense GPU fwd+bwd; rules host |
-| Parallel | ✓/✗ | ✗ | branch Dense GPU; NormalBP gap |
-| RMSNorm | ✗ | ✗ | host f64 only — **needs shaders** |
-| LayerNorm | ✗ | ✗ | host f64 only — **needs shaders** |
-| Softmax | ✗ | ✗ | host only — **needs shaders** |
-| Embedding | ✗ | ✗ | host gather/scatter — **needs shaders** |
-| ConvT1/2/3 | ✗ | ✗ | host scatter/adjoint — **needs shaders** |
-| GDN | ✗ | ✗ | entire path host f32 — **needs shaders** |
-| KMeans | ✗ | ✗ | fwd host; NormalBP gap |
+| Path | Execution today |
+|---|---|
+| Dense forward / backward | Metal kernels; FormatNone staging supports all 34 dtypes |
+| MSE / MSEGrad | Metal kernels; loss tolerance described in the execution contract |
+| SGD | Metal kernel, **Float32 FormatNone only** |
+| Sequential / NestedStack | Host scheduling and copies; supported Dense compute runs on Metal |
+| Mesh gradient joins | Metal accumulation kernel |
+| All other layer forward / backward / updates | `Unsupported`; CPU implementation retired |
+| Non-Float32 SGD / float64 bias SGD | `Unsupported`; no CPU update fallback |
 
-**Push order:** (1) Dense MatVecT + outer + SGD on Metal → flips projection bwd for SwiGLU/MHA/CNN/RNN/LSTM/Seq/Res/Mamba/Meta. (2) Norm / Softmax / Emb / ConvT / GDN / attn / scan kernels. (3) Kill harness IPC for speed benches (resident session). Re-sign bands if GPU ≠ Go exact_bit — prefer Metal correctness over host bit-clone.
-
-Only shader file today: `shaders/welvet_dense.metal`.
+The tables below retain historical wire/case coverage for the port backlog.
+All former sign-offs are reset: parity against CPU implementations was not proof
+of GPU training. Re-sign each row only after its Metal kernel and w2a evidence land.
 
 ---
 
@@ -52,13 +40,12 @@ Only shader file today: `shaders/welvet_dense.metal`.
 | **3D volumetric** | Same mode works when that layer sits in a multi-cell Grid (volume Forward/Backward + credit across cells). |
 | **Fully signed off** | **All** supported FormatNone dtypes for that layer under this mode (not just f32). Softmax = dX only. GDN = f32-only in Go → sign off when f32 path is done. |
 
-Tick `[x]` when done. Put the **release tag** in **Ver** when that row (or the whole mode table) is signed.
+Tick `[ ]` when done. Put the **release tag** in **Ver** when that row (or the whole mode table) is signed.
 
-**Current engine:** forward/volume FormatNone×34 largely landed; **Dense…Stack NormalBP** + **StepBP Line + MeshBP** signed (Softmax ≥loose/~strict; MHA leaf×34 W exact + dX/dW ≥strict; GDN leaf ≥loose / vol ≥industry f32-only; GDN StepBP ≥strict). Resident Dense soft-double W (reload after SGD). Remaining NormalBP: KMeans / Parallel; next TrainMode: Tween….
-
-**Prerequisite (forward):** leaf + volume forward wires exist for Dense/MHA/norms/SwiGLU/Softmax/Emb/CNN*/ConvT*/RNN/LSTM/Seq/Res/Mamba/Meta/GDN/KMeans/Parallel (`*G1` / `WRF1`…`WKF1` / `WSG1`…). Stack NestedStack volume NBP via `bind_stack` (STKV).
-
-**Run lines** below name the Metal harness (`welvet.metal/scripts/macos_build_w2a.sh --*-train`). `--dense-train` … `--stack-train` / `--stepbp-train` live; other flags land with each suite.
+**Current engine:** use the GPU-only gate in w2a:
+`go test ./tests/go_v_metal -run '^TestGoVMetalOnly$' -count=1 -v`.
+The historical broad suites deliberately remain available; unported rows now fail
+with an explicit unsupported status rather than executing on the CPU.
 
 ---
 
@@ -71,13 +58,13 @@ Timing: warm-up + `--bench=N` (in-process; no spawn) → **goµs / mtlµs / spd%
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 ReLU (dX/dW/W/loss) | [x] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + speed table |
-| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 + speed table |
+| 1 | Leaf Float32 ReLU (dX/dW/W/loss) | [ ] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + speed table |
+| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 + speed table |
 
 ## w2a Go↔Metal (RMSNorm NormalBP) — sign-off evidence
 
@@ -87,13 +74,13 @@ Timing: same `--bench=N` / spd%Δ convention as Dense (leaf mount-once + γ rese
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 (dX/dγ/γ/loss) | [x] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + speed table |
-| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 + speed table |
+| 1 | Leaf Float32 (dX/dγ/γ/loss) | [ ] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + speed table |
+| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 + speed table |
 
 ## w2a Go↔Metal (LayerNorm NormalBP) — sign-off evidence
 
@@ -103,13 +90,13 @@ Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + γ/β reset).
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 (dX/dγβ/γβ/loss) | [x] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + speed table |
-| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 + speed table |
+| 1 | Leaf Float32 (dX/dγβ/γβ/loss) | [ ] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + speed table |
+| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 + speed table |
 
 ## w2a Go↔Metal (SwiGLU NormalBP) — sign-off evidence
 
@@ -119,13 +106,13 @@ Timing: same `--bench=N` / spd%Δ convention.
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 (dX/dW/W/loss) | [x] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + speed table |
-| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 + speed table |
+| 1 | Leaf Float32 (dX/dW/W/loss) | [ ] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + speed table |
+| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 + speed table |
 
 ## w2a Go↔Metal (Softmax NormalBP) — sign-off evidence
 
@@ -135,15 +122,15 @@ Timing: leaf mount-once (reuse layer; no W). Band: **≥loose** floor (Softmax h
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Standard Float32 (dX/loss) | [x] | strict + speed |
-| 2 | Leaf all Kind Float32 (+ gumbel smoke) | [x] | ≥loose; gumbel non-det |
-| 3 | Leaf Standard × all 34 dtypes | [x] | strict ×34 + speed |
-| 4 | Leaf all Kind × all 34 dtypes | [x] | ≥loose (worst=loose) |
-| 5 | Volume 1×1×1×1 Float32 | [x] | inside-node strict |
-| 6 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer strict |
-| 7 | Volume 1×1×1×1 × all 34 dtypes | [x] | strict ×34 |
-| 8 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric strict |
-| 9 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell strict ×34 |
+| 1 | Leaf Standard Float32 (dX/loss) | [ ] | strict + speed |
+| 2 | Leaf all Kind Float32 (+ gumbel smoke) | [ ] | ≥loose; gumbel non-det |
+| 3 | Leaf Standard × all 34 dtypes | [ ] | strict ×34 + speed |
+| 4 | Leaf all Kind × all 34 dtypes | [ ] | ≥loose (worst=loose) |
+| 5 | Volume 1×1×1×1 Float32 | [ ] | inside-node strict |
+| 6 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer strict |
+| 7 | Volume 1×1×1×1 × all 34 dtypes | [ ] | strict ×34 |
+| 8 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric strict |
+| 9 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell strict ×34 |
 
 ## w2a Go↔Metal (Embedding NormalBP) — sign-off evidence
 
@@ -153,13 +140,13 @@ Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + W reset). dX zer
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 (dX/dW/W/loss) | [x] | exact_bit + speed |
-| 2 | Leaf × all 34 dtypes | [x] | exact_bit + speed table |
-| 3 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
-| 4 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
-| 5 | Volume 1×1×1×1 × all 34 dtypes | [x] | + spectrum |
-| 6 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
-| 7 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 |
+| 1 | Leaf Float32 (dX/dW/W/loss) | [ ] | exact_bit + speed |
+| 2 | Leaf × all 34 dtypes | [ ] | exact_bit + speed table |
+| 3 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
+| 4 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
+| 5 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + spectrum |
+| 6 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
+| 7 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 |
 
 ## w2a Go↔Metal (MHA NormalBP) — sign-off evidence
 
@@ -169,14 +156,14 @@ Timing: same `--bench=N` / spd%Δ convention (resident Dense Q/K/V/O; microbench
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf DecoderCausal Float32 (dX/dW/W/loss) | [x] | exact_bit + speed |
-| 2 | Leaf GQA + Encoder Float32 | [x] | exact_bit |
-| 3 | Leaf DecoderCausal × all 34 dtypes | [x] | W exact_bit; dX/dW ≥strict (uint2 dW ~1 ULP) |
-| 4 | Volume 1×1×1×1 Float32 | [x] | inside-node + speed |
-| 5 | Volume 1×1×1×2 chain Float32 | [x] | multi-layer cell + speed |
-| 6 | Volume 1×1×1×1 × all 34 dtypes | [x] | + spectrum |
-| 7 | Volume 2×2×2×1 Float32 | [x] | 3D volumetric + speed |
-| 8 | Volume 2×1×1×1 × all 34 dtypes | [x] | multi-cell ×34 |
+| 1 | Leaf DecoderCausal Float32 (dX/dW/W/loss) | [ ] | exact_bit + speed |
+| 2 | Leaf GQA + Encoder Float32 | [ ] | exact_bit |
+| 3 | Leaf DecoderCausal × all 34 dtypes | [ ] | W exact_bit; dX/dW ≥strict (uint2 dW ~1 ULP) |
+| 4 | Volume 1×1×1×1 Float32 | [ ] | inside-node + speed |
+| 5 | Volume 1×1×1×2 chain Float32 | [ ] | multi-layer cell + speed |
+| 6 | Volume 1×1×1×1 × all 34 dtypes | [ ] | + spectrum |
+| 7 | Volume 2×2×2×1 Float32 | [ ] | 3D volumetric + speed |
+| 8 | Volume 2×1×1×1 × all 34 dtypes | [ ] | multi-cell ×34 |
 
 ## w2a Go↔Metal (CNN1/2/3 NormalBP) — sign-off evidence
 
@@ -186,10 +173,10 @@ Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + proj W reset). i
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1–3 | Leaf Float32 CNN1/2/3 | [x] | exact_bit + speed |
-| 4–6 | Leaf ×34 CNN1/2/3 | [x] | exact_bit spectrum |
-| 7–9 | Volume 1×1×1×1 / chain / ×34 | [x] | shape-preserving pad |
-| 10–12 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1–3 | Leaf Float32 CNN1/2/3 | [ ] | exact_bit + speed |
+| 4–6 | Leaf ×34 CNN1/2/3 | [ ] | exact_bit spectrum |
+| 7–9 | Volume 1×1×1×1 / chain / ×34 | [ ] | shape-preserving pad |
+| 10–12 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (ConvT1/2/3 NormalBP) — sign-off evidence
 
@@ -199,10 +186,10 @@ Timing: same `--bench=N` / spd%Δ convention (leaf mount-once + proj W reset). S
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1–3 | Leaf Float32 ConvT1/2/3 | [x] | exact_bit + speed |
-| 4–6 | Leaf ×34 ConvT1/2/3 | [x] | exact_bit spectrum |
-| 7–9 | Volume 1×1×1×1 / chain / ×34 | [x] | shape-preserving pad |
-| 10–12 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1–3 | Leaf Float32 ConvT1/2/3 | [ ] | exact_bit + speed |
+| 4–6 | Leaf ×34 ConvT1/2/3 | [ ] | exact_bit spectrum |
+| 7–9 | Volume 1×1×1×1 / chain / ×34 | [ ] | shape-preserving pad |
+| 10–12 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (RNN NormalBP) — sign-off evidence
 
@@ -212,10 +199,10 @@ Timing: same `--bench=N` / spd%Δ convention. BPTT via Dense IH/HH + tanh′; lo
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | in=hid chain |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | in=hid chain |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (LSTM NormalBP) — sign-off evidence
 
@@ -225,10 +212,10 @@ Timing: same `--bench=N` / spd%Δ convention. BPTT 4-gate Dense; loom `[i|f|g|o]
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | in=hid chain |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | in=hid chain |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (Sequential NormalBP) — sign-off evidence
 
@@ -238,10 +225,10 @@ Timing: same `--bench=N` / spd%Δ convention. Reverse Dense Dim→Dim chain; loo
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | shape-preserving Dim |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | shape-preserving Dim |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (Residual NormalBP) — sign-off evidence
 
@@ -251,10 +238,10 @@ Timing: same `--bench=N` / spd%Δ convention. F reverse Dense + skip grad; loom 
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | y=F(x)+x |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | y=F(x)+x |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (Mamba NormalBP) — sign-off evidence
 
@@ -264,10 +251,10 @@ Timing: same `--bench=N` / spd%Δ convention. Scan BPTT + In/Out Dense; loom In|
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | shape-preserving D |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | shape-preserving D |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (Metacognition NormalBP) — sign-off evidence
 
@@ -277,10 +264,10 @@ Timing: same `--bench=N` / spd%Δ convention. lastGate-scale + Observed Dense; l
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | default cool rules |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | scaled init for 8-hop |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | default cool rules |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | scaled init for 8-hop |
 
 ## w2a Go↔Metal (GDN NormalBP) — sign-off evidence
 
@@ -290,10 +277,10 @@ Timing: same `--bench=N` / spd%Δ convention. Truncated-BPTT (state/conv stop-gr
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | ≥loose (dW floor) + speed |
-| 2 | Volume 1×1×1×1 | [x] | ≥industry |
-| 3 | Volume 1×1×1×2 chain | [x] | ≥industry |
-| 4 | Volume 2×2×2×1 | [x] | ≥industry; scaled init |
+| 1 | Leaf Float32 | [ ] | ≥loose (dW floor) + speed |
+| 2 | Volume 1×1×1×1 | [ ] | ≥industry |
+| 3 | Volume 1×1×1×2 chain | [ ] | ≥industry |
+| 4 | Volume 2×2×2×1 | [ ] | ≥industry; scaled init |
 
 ## w2a Go↔Metal (Stack NestedStack-of-Dense NormalBP) — sign-off evidence
 
@@ -303,10 +290,10 @@ Timing: same `--bench=N` / spd%Δ convention. NestedStack of Dense Dim→Dim Lin
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Leaf Float32 | [x] | exact_bit + speed |
-| 2 | Leaf ×34 | [x] | exact_bit spectrum |
-| 3–5 | Volume 1×1×1×1 / chain / ×34 | [x] | NestedStack Dense |
-| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [x] | binary 211 post denorm ≤1e-18 OK |
+| 1 | Leaf Float32 | [ ] | exact_bit + speed |
+| 2 | Leaf ×34 | [ ] | exact_bit spectrum |
+| 3–5 | Volume 1×1×1×1 / chain / ×34 | [ ] | NestedStack Dense |
+| 6–7 | Volume 2×2×2×1 / 2×1×1×1×34 | [ ] | binary 211 post denorm ≤1e-18 OK |
 
 ---
 
@@ -319,23 +306,23 @@ Each Line ×34 kind prints **dtype / band / exact%W / goµs / mtlµs / spd%Δ**.
 
 | # | Case | Status | Notes |
 |---|---|:---:|---|
-| 1 | Dense multi-hop Float32 (W/loss) | [x] | warm-up ticks until first pop |
-| 2 | Dense 1-hop ×34 | [x] | spectrum + speed table |
-| 3–4 | RMSNorm f32 + ×34 | [x] | full spectrum + speed |
-| 5–6 | LayerNorm f32 + ×34 | [x] | full spectrum + speed |
-| 7–8 | Softmax f32 + ×34 | [x] | full spectrum + speed |
-| 9–10 | SwiGLU f32 + ×34 | [x] | full spectrum + speed |
-| 11–12 | Sequential f32 + ×34 | [x] | full spectrum + speed |
-| 13–14 | Residual f32 + ×34 | [x] | full spectrum + speed |
-| 15–16 | Mamba f32 + ×34 | [x] | full spectrum + speed |
-| 17–18 | Embedding f32 + ×34 | [x] | full spectrum + speed |
-| 19–20 | MHA f32 + ×34 | [x] | full spectrum + speed |
-| 21–22 | CNN1 f32 + ×34 | [x] | full spectrum + speed (CNN2/3 share) |
-| 23–24 | ConvT1 f32 + ×34 | [x] | full spectrum + speed (ConvT2/3 share) |
-| 25–26 | RNN f32 + ×34 | [x] | full spectrum + speed |
-| 27–28 | LSTM f32 + ×34 | [x] | full spectrum + speed |
-| 29–31 | Dense MeshBP mesh-clock 111/211/222 | [x] | MBP1 exact_bit + speed |
-| 32–49 | MeshBP volume 2×2×2×1 all signed kinds | [x] | ModeMeshBP = volume Step |
+| 1 | Dense multi-hop Float32 (W/loss) | [ ] | warm-up ticks until first pop |
+| 2 | Dense 1-hop ×34 | [ ] | spectrum + speed table |
+| 3–4 | RMSNorm f32 + ×34 | [ ] | full spectrum + speed |
+| 5–6 | LayerNorm f32 + ×34 | [ ] | full spectrum + speed |
+| 7–8 | Softmax f32 + ×34 | [ ] | full spectrum + speed |
+| 9–10 | SwiGLU f32 + ×34 | [ ] | full spectrum + speed |
+| 11–12 | Sequential f32 + ×34 | [ ] | full spectrum + speed |
+| 13–14 | Residual f32 + ×34 | [ ] | full spectrum + speed |
+| 15–16 | Mamba f32 + ×34 | [ ] | full spectrum + speed |
+| 17–18 | Embedding f32 + ×34 | [ ] | full spectrum + speed |
+| 19–20 | MHA f32 + ×34 | [ ] | full spectrum + speed |
+| 21–22 | CNN1 f32 + ×34 | [ ] | full spectrum + speed (CNN2/3 share) |
+| 23–24 | ConvT1 f32 + ×34 | [ ] | full spectrum + speed (ConvT2/3 share) |
+| 25–26 | RNN f32 + ×34 | [ ] | full spectrum + speed |
+| 27–28 | LSTM f32 + ×34 | [ ] | full spectrum + speed |
+| 29–31 | Dense MeshBP mesh-clock 111/211/222 | [ ] | MBP1 exact_bit + speed |
+| 32–49 | MeshBP volume 2×2×2×1 all signed kinds | [ ] | ModeMeshBP = volume Step |
 
 ## w2a Go↔Metal (Tween ModeTween) — sign-off evidence
 
@@ -480,29 +467,29 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [x] | [x] | [x] | `0.02-m2-dense-nbp` |
-| RMSNorm | [x] | [x] | [x] | `0.03-m2-rmsnorm-nbp` |
-| LayerNorm | [x] | [x] | [x] | `0.04-m2-layernorm-nbp` |
-| SwiGLU | [x] | [x] | [x] | `0.05-m2-swiglu-nbp` |
-| Softmax | [x] | [x] | [x] | `0.06-m2-softmax-nbp` |
-| Embedding | [x] | [x] | [x] | `0.07-m2-embedding-nbp` |
-| MHA | [x] | [x] | [x] | `0.08-m2-mha-nbp` |
-| CNN1 | [x] | [x] | [x] | `0.09-m2-cnn-nbp` |
-| CNN2 | [x] | [x] | [x] | `0.09-m2-cnn-nbp` |
-| CNN3 | [x] | [x] | [x] | `0.09-m2-cnn-nbp` |
-| ConvT1 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
-| ConvT2 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
-| ConvT3 | [x] | [x] | [x] | `0.10-m2-convt-nbp` |
-| RNN | [x] | [x] | [x] | `0.11-m2-rnn-nbp` |
-| LSTM | [x] | [x] | [x] | `0.12-m2-lstm-nbp` |
-| Sequential | [x] | [x] | [x] | `0.13-m2-sequential-nbp` |
-| Residual | [x] | [x] | [x] | `0.14-m2-residual-nbp` |
+| Dense | [ ] | [ ] | [ ] | `0.02-m2-dense-nbp` |
+| RMSNorm | [ ] | [ ] | [ ] | `0.03-m2-rmsnorm-nbp` |
+| LayerNorm | [ ] | [ ] | [ ] | `0.04-m2-layernorm-nbp` |
+| SwiGLU | [ ] | [ ] | [ ] | `0.05-m2-swiglu-nbp` |
+| Softmax | [ ] | [ ] | [ ] | `0.06-m2-softmax-nbp` |
+| Embedding | [ ] | [ ] | [ ] | `0.07-m2-embedding-nbp` |
+| MHA | [ ] | [ ] | [ ] | `0.08-m2-mha-nbp` |
+| CNN1 | [ ] | [ ] | [ ] | `0.09-m2-cnn-nbp` |
+| CNN2 | [ ] | [ ] | [ ] | `0.09-m2-cnn-nbp` |
+| CNN3 | [ ] | [ ] | [ ] | `0.09-m2-cnn-nbp` |
+| ConvT1 | [ ] | [ ] | [ ] | `0.10-m2-convt-nbp` |
+| ConvT2 | [ ] | [ ] | [ ] | `0.10-m2-convt-nbp` |
+| ConvT3 | [ ] | [ ] | [ ] | `0.10-m2-convt-nbp` |
+| RNN | [ ] | [ ] | [ ] | `0.11-m2-rnn-nbp` |
+| LSTM | [ ] | [ ] | [ ] | `0.12-m2-lstm-nbp` |
+| Sequential | [ ] | [ ] | [ ] | `0.13-m2-sequential-nbp` |
+| Residual | [ ] | [ ] | [ ] | `0.14-m2-residual-nbp` |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [x] | [x] | [x] | `0.15-m2-mamba-nbp` |
-| Metacognition | [x] | [x] | [x] | `0.16-m2-metacognition-nbp` |
-| GDN | [x] | [x] | [x] | `0.17-m2-gdn-nbp` |
+| Mamba | [ ] | [ ] | [ ] | `0.15-m2-mamba-nbp` |
+| Metacognition | [ ] | [ ] | [ ] | `0.16-m2-metacognition-nbp` |
+| GDN | [ ] | [ ] | [ ] | `0.17-m2-gdn-nbp` |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [x] | [x] | [x] | `0.18-m2-stack-nbp` |
+| Stack | [ ] | [ ] | [ ] | `0.18-m2-stack-nbp` |
 
 **Checkpoint:** `0.18-m2-stack-nbp` — Dense…Stack NormalBP (GDN f32 ≥loose/≥industry; Stack NestedStack exact_bit STKB/STKV). StepBP/MeshBP signed at `0.19-m2-meshbp`; remaining NormalBP: KMeans / Parallel.
 
@@ -516,29 +503,29 @@ Ship: thin Stack host + `runtime/line` TickLine/TrainLineMSE; wire `STB1`/`STBO`
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| RMSNorm | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| LayerNorm | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| SwiGLU | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| Softmax | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| Embedding | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| MHA | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| CNN1 | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| CNN2 | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| CNN3 | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| ConvT1 | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| ConvT2 | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| ConvT3 | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| RNN | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| LSTM | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| Sequential | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| Residual | [x] | [x] | [x] | `0.19-m2-meshbp` |
+| Dense | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| RMSNorm | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| LayerNorm | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| SwiGLU | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Softmax | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Embedding | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| MHA | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| CNN1 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| CNN2 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| CNN3 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| ConvT1 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| ConvT2 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| ConvT3 | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| RNN | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| LSTM | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Sequential | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Residual | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| Metacognition | [x] | [x] | [x] | `0.19-m2-meshbp` |
-| GDN | [x] | [x] | [x] | `0.19-m2-meshbp` |
+| Mamba | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| Metacognition | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
+| GDN | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [x] | [x] | [x] | `0.19-m2-meshbp` |
+| Stack | [ ] | [ ] | [ ] | `0.19-m2-meshbp` |
 
 **Checkpoint:** `0.19-m2-meshbp` — StepBP Line (STB1) + MeshBP mesh-clock (MBP1) + ModeMeshBP volume 222 for NormalBP-signed kinds; next Tween / KMeans / Parallel.
 
