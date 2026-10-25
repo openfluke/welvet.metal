@@ -15,7 +15,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) **0.67** (semantics/wire to mirror — **score not inherited**) |
 | **Validation** | [w2a](https://github.com/openfluke/w2a) planned `Go_v_Metal` (determinism + speed) |
 
-**This README is the runway.** Every unchecked cell is planned Metal work. Tick ⬜ → 🚧 → ✅ here as gates land. Do not keep a parallel “real” checklist elsewhere. [GAPS.md](GAPS.md) is the machine-oriented census mirror; [VERSIONING.md](VERSIONING.md) is the `0.x` formula.
+**This README is the runway.** Every unchecked cell is planned Metal work. Tick ⬜ → 🚧 → ✅ here as gates land. **Training port detail** (per-mode × layer evidence, wire names, version log) lives in [docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md) — tick there as NormalBP / TrainModes land; this README keeps the mode summary table. [GAPS.md](GAPS.md) is the machine-oriented census mirror; [VERSIONING.md](VERSIONING.md) is the `0.x` formula.
 
 ### What exists today (M0 host only — not engine credit)
 
@@ -469,7 +469,7 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 | — | CamSync / BlendStores | — | ⬜ | ⬜ | ⬜ | |
 | — | Cameral BranchModes (Parallel) | — | ⬜ | ⬜ | ⬜ | |
 
-Per-layer evidence tables (leaf ×34, volume shapes, speed) get appended under each mode as suites land — still **in this README** (or linked anchors in this file), not a replacement checklist.
+Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md)**. Mode summary table above stays the high-level board; tick detailed rows in the checklist.
 
 ### Sign-off template (copy per mode × layer)
 
