@@ -28,8 +28,9 @@ for arg in "$@"; do
     --cnn-train) MODE="cnn_train" ;;
     --convt-train) MODE="convt_train" ;;
     --rnn-train) MODE="rnn_train" ;;
+    --lstm-train) MODE="lstm_train" ;;
     --help|-h)
-      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train|--swiglu-train|--softmax-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train]"
+      echo "usage: $0 [--dense-train|--rmsnorm-train|--layernorm-train|--swiglu-train|--softmax-train|--embedding-train|--mha-train|--cnn-train|--convt-train|--rnn-train|--lstm-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
       ;;
@@ -74,6 +75,10 @@ if [[ "$MODE" == "convt_train" ]]; then
 fi
 if [[ "$MODE" == "rnn_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalRNNTrain$' -timeout 60m
+  exit 0
+fi
+if [[ "$MODE" == "lstm_train" ]]; then
+  go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalLSTMTrain$' -timeout 60m
   exit 0
 fi
 

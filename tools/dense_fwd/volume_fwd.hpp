@@ -71,3 +71,7 @@ int run_volume_convt3_normalbp(int bench_iters);       // T3V1 → T3VO (+ optio
 // RNN NormalBP (training)
 int run_rnn_normalbp(int bench_iters);                 // RNB1 → RNBO (+ optional WVB1)
 int run_volume_rnn_normalbp(int bench_iters);          // RNV1 → RNVO (+ optional WVB1)
+
+// LSTM NormalBP (training)
+int run_lstm_normalbp(int bench_iters);                // LSB1 → LSBO (+ optional WVB1)
+int run_volume_lstm_normalbp(int bench_iters);         // LSV1 → LSVO (+ optional WVB1)

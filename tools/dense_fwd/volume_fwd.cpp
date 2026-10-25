@@ -5775,3 +5775,278 @@ int run_volume_rnn_normalbp(int bench_iters) {
   }
   return write_cnn_vol_nbp_out("RNVO", loss, bwd, fwd, Ws);
 }
+
+// ---------------------------------------------------------------------------
+// LSB1 leaf + LSV1 volume LSTM NormalBP (BPTT 4-gate)
+// ---------------------------------------------------------------------------
+
+int run_lstm_normalbp(int bench_iters) {
+  int32_t batch = 0, input_size = 0, hidden_size = 0, seq_len = 0, dtype = 1, backend = 0;
+  if (!read_exact(&batch, 1) || !read_exact(&input_size, 1) || !read_exact(&hidden_size, 1) ||
+      !read_exact(&seq_len, 1) || !read_exact(&dtype, 1) || !read_exact(&backend, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short LSB1 header\n");
+    return 2;
+  }
+  (void)backend;
+  const int gate = hidden_size * input_size + hidden_size * hidden_size + hidden_size;
+  const int nw = 4 * gate;
+  const int ih_n = hidden_size * input_size;
+  const int hh_n = hidden_size * hidden_size;
+  std::vector<float> W(static_cast<std::size_t>(nw));
+  if (!read_exact(W.data(), W.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * seq_len * input_size));
+  if (!read_exact(x.data(), x.size())) return 2;
+  int32_t use_target = 0;
+  if (!read_exact(&use_target, 1)) return 2;
+  std::vector<float> gyt(static_cast<std::size_t>(batch * seq_len * hidden_size));
+  if (!read_exact(gyt.data(), gyt.size())) return 2;
+  double lr = 0.0;
+  if (!read_exact(&lr, 1)) return 2;
+
+  const int npre = batch * seq_len * 5 * hidden_size;
+  std::vector<float> pre(static_cast<std::size_t>(npre)), post(gyt.size()), dX(x.size()), dW(W.size()),
+      W_after(W.size());
+  double loss = 0.0;
+
+  welvet::lstm::Config cfg;
+  cfg.input_size = input_size;
+  cfg.hidden_size = hidden_size;
+  cfg.seq_len = seq_len;
+  welvet::lstm::Layer layer;
+  auto st0 = welvet::lstm::new_configured(cfg, static_cast<welvet::DType>(dtype), W.data(), &layer);
+  if (!st0) {
+    std::fprintf(stderr, "welvet_dense_fwd: %s\n", st0.message.c_str());
+    return 1;
+  }
+  welvet::TensorF32 input;
+  input.shape = {batch, seq_len, input_size};
+  input.data.assign(x.begin(), x.end());
+
+  auto reset_gate = [&](welvet::lstm::Gate& g, const float* pack) -> welvet::Status {
+    auto st = welvet::WeightStore::make(hidden_size, input_size, static_cast<welvet::DType>(dtype),
+                                        pack, &g.IH.weights);
+    if (!st) return st;
+    st = welvet::WeightStore::make(hidden_size, hidden_size, static_cast<welvet::DType>(dtype),
+                                   pack + ih_n, &g.HH.weights);
+    if (!st) return st;
+    g.IH.weights.bias.assign(static_cast<std::size_t>(hidden_size), 0.0);
+    for (int i = 0; i < hidden_size; ++i) {
+      g.IH.weights.bias[static_cast<std::size_t>(i)] =
+          static_cast<double>(pack[ih_n + hh_n + i]);
+    }
+    g.IH.invalidate_gpu();
+    g.HH.invalidate_gpu();
+    return welvet::Status::Ok();
+  };
+
+  auto reset_w = [&]() -> welvet::Status {
+    welvet::lstm::Gate* gates[4] = {&layer.I, &layer.F, &layer.G, &layer.O};
+    for (int gi = 0; gi < 4; ++gi) {
+      if (auto st = reset_gate(*gates[gi], W.data() + gi * gate); !st) return st;
+    }
+    return welvet::Status::Ok();
+  };
+
+  auto step = [&](bool export_out) -> welvet::Status {
+    if (auto st = reset_w(); !st) return st;
+    welvet::TensorF32 pre_t, post_t;
+    if (auto st = welvet::lstm::forward(layer, input, &pre_t, &post_t); !st) return st;
+    welvet::TensorF32 gy;
+    gy.shape = post_t.shape;
+    gy.data.assign(gyt.begin(), gyt.end());
+    loss = 0.0;
+    if (use_target) {
+      if (auto st = welvet::runtime::training::mse(post_t, gy, &loss); !st) return st;
+      welvet::TensorF32 gtmp;
+      if (auto st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp); !st) return st;
+      gy = std::move(gtmp);
+    }
+    welvet::TensorF32 dx_t, dw_t;
+    if (auto st = welvet::lstm::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t); !st) return st;
+    if (lr != 0.0) {
+      if (auto st = welvet::lstm::apply_grad_sgd(&layer, dw_t, lr); !st) return st;
+    }
+    if (export_out) {
+      if (auto st = welvet::lstm::export_packed_f32(layer, W_after.data()); !st) return st;
+      std::memcpy(pre.data(), pre_t.data.data(), pre_t.data.size() * sizeof(float));
+      std::memcpy(post.data(), post_t.data.data(), post_t.data.size() * sizeof(float));
+      std::memcpy(dX.data(), dx_t.data.data(), dx_t.data.size() * sizeof(float));
+      std::memcpy(dW.data(), dw_t.data.data(), dw_t.data.size() * sizeof(float));
+    }
+    return welvet::Status::Ok();
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      auto st = step(false);
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = step(false);
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
+    if (auto st = step(true); !st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  } else {
+    if (auto st = step(true); !st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+  return write_cnn_nbp_leaf_out("LSBO", pre, post, dX, dW, W_after, loss);
+}
+
+int run_volume_lstm_normalbp(int bench_iters) {
+  int32_t depth = 0, rows = 0, cols = 0, lpc = 0, batch = 0, backend = 0, n_links = 0;
+  if (!read_grid_hdr(&depth, &rows, &cols, &lpc, &batch, &backend, &n_links, "LSV1")) return 2;
+  if (batch <= 0) return 1;
+  (void)backend;
+  std::vector<int32_t> links(static_cast<std::size_t>(n_links) * 8);
+  if (n_links > 0 && !read_exact(links.data(), links.size())) return 2;
+
+  struct CellInit {
+    bool enabled = false;
+    int in = 0, hid = 0, seq = 0, dtype = 1;
+    welvet::architecture::Coord coord{};
+    std::vector<float> W;
+  };
+  auto hops = welvet::architecture::hop_order(welvet::architecture::new_grid(depth, rows, cols, lpc));
+  std::vector<CellInit> cells;
+  cells.reserve(hops.size());
+  int first_in = -1, first_seq = -1;
+  for (const auto& coord : hops) {
+    CellInit c;
+    c.coord = coord;
+    int32_t en = 0;
+    if (!read_exact(&en, 1)) return 2;
+    c.enabled = en != 0;
+    if (!c.enabled) {
+      cells.push_back(std::move(c));
+      continue;
+    }
+    if (!read_exact(&c.in, 1) || !read_exact(&c.hid, 1) || !read_exact(&c.seq, 1) ||
+        !read_exact(&c.dtype, 1)) {
+      return 2;
+    }
+    const int nw = 4 * (c.hid * c.in + c.hid * c.hid + c.hid);
+    c.W.resize(static_cast<std::size_t>(nw));
+    if (!read_exact(c.W.data(), c.W.size())) return 2;
+    if (first_in < 0) {
+      first_in = c.in;
+      first_seq = c.seq;
+    }
+    cells.push_back(std::move(c));
+  }
+  if (first_in < 0) return 1;
+
+  welvet::TensorF32 input;
+  input.shape = {batch, first_seq, first_in};
+  input.data.resize(static_cast<std::size_t>(batch * first_seq * first_in));
+  if (!read_exact(input.data.data(), input.data.size())) return 2;
+
+  int final_hid = 0, final_seq = 0;
+  for (auto it = cells.rbegin(); it != cells.rend(); ++it) {
+    if (!it->enabled) continue;
+    final_hid = it->hid;
+    final_seq = it->seq;
+    break;
+  }
+  welvet::TensorF32 target;
+  target.shape = {batch, final_seq, final_hid};
+  target.data.resize(static_cast<std::size_t>(batch * final_seq * final_hid));
+  if (!read_exact(target.data.data(), target.data.size())) return 2;
+  double lr = 0.0;
+  if (!read_exact(&lr, 1)) return 2;
+
+  welvet::architecture::Grid g;
+  welvet::runtime::forward::Result fwd;
+  welvet::runtime::backward::Result bwd;
+  double loss = 0.0;
+
+  auto rebuild_and_step = [&]() -> welvet::Status {
+    g = welvet::architecture::new_grid(depth, rows, cols, lpc);
+    for (int32_t i = 0; i < n_links; ++i) {
+      const int32_t* L = links.data() + static_cast<std::size_t>(i) * 8;
+      if (auto st = welvet::architecture::set_remote_link(g, L[0], L[1], L[2], L[3], L[4], L[5],
+                                                          L[6], L[7]);
+          !st) {
+        return st;
+      }
+    }
+    for (const auto& c : cells) {
+      if (!c.enabled) continue;
+      welvet::lstm::Config cfg;
+      cfg.input_size = c.in;
+      cfg.hidden_size = c.hid;
+      cfg.seq_len = c.seq;
+      welvet::lstm::Layer layer;
+      auto st = welvet::lstm::new_configured(cfg, static_cast<welvet::DType>(c.dtype), c.W.data(),
+                                             &layer);
+      if (!st) return st;
+      st = welvet::architecture::bind_lstm(g, c.coord.z, c.coord.y, c.coord.x, c.coord.l,
+                                           std::move(layer));
+      if (!st) return st;
+    }
+    if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 3; ++i) {
+      auto st = rebuild_and_step();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = rebuild_and_step();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
+  } else {
+    auto st = rebuild_and_step();
+    if (!st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+
+  std::vector<std::vector<float>> Ws;
+  for (const auto& c : cells) {
+    if (!c.enabled) continue;
+    auto* cell = welvet::architecture::at(g, c.coord.z, c.coord.y, c.coord.x, c.coord.l);
+    if (!cell) return 1;
+    const int nw = welvet::lstm::grad_w_size(cell->lstm_op);
+    std::vector<float> Wa(static_cast<std::size_t>(nw));
+    auto est = welvet::lstm::export_packed_f32(cell->lstm_op, Wa.data());
+    if (!est) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", est.message.c_str());
+      return 1;
+    }
+    Ws.push_back(std::move(Wa));
+  }
+  return write_cnn_vol_nbp_out("LSVO", loss, bwd, fwd, Ws);
+}

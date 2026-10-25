@@ -278,6 +278,14 @@ WELVET_API welvet_status welvet_lstm_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
 
+/* LSTM NormalBP leaf. use_target: 0=gradOut on post, 1=MSE target. lr==0 skips SGD.
+ * dW/W_after: loom pack 4×[IH|HH|bias]. pre=[batch,seq,5H]. */
+WELVET_API welvet_status welvet_lstm_normalbp_f32(
+    int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
+    int32_t backend, const float* packed, const float* x, const float* grad_or_target,
+    int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
+    double* loss);
+
 /* GDN (Gated DeltaNet) — WGD1 wire. Float32 FormatNone host f32 (Go exact_bit).
  * packed: InQKV|InZ|InB|InA|Out|Conv|ALog|DtBias|γ. dtype ignored. */
 WELVET_API welvet_status welvet_gdn_forward_f32(

@@ -12,6 +12,7 @@
 #include "welvet/mha.hpp"
 #include "welvet/rmsnorm.hpp"
 #include "welvet/rnn.hpp"
+#include "welvet/lstm.hpp"
 #include "welvet/softmax.hpp"
 #include "welvet/swiglu.hpp"
 
@@ -54,9 +55,11 @@ Status cell(architecture::Cell& cell, const TensorF32& grad_out, const TensorF32
     return convt3::backward_f32(cell.convt3_op, grad_out, input, pre, grad_in, dW);
   case architecture::OpKind::RNN:
     return rnn::backward_f32(cell.rnn_op, grad_out, input, pre, grad_in, dW);
+  case architecture::OpKind::LSTM:
+    return lstm::backward_f32(cell.lstm_op, grad_out, input, pre, grad_in, dW);
   default:
     return Status::Gap(
-        "runtime.backward: cell Op not yet on Metal (Dense/…/CNN/ConvT/RNN NormalBP first)");
+        "runtime.backward: cell Op not yet on Metal (Dense/…/CNN/ConvT/RNN/LSTM NormalBP first)");
   }
 }
 
