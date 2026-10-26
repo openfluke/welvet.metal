@@ -73,6 +73,10 @@ set(WELVET_CORE_SOURCES
   src/runtime/step.cpp
   src/runtime/tween_chain_train.cpp
   src/systems/tween_chain.cpp
+  src/runtime/tween_split_train.cpp
+  src/runtime/tween_alt_train.cpp
+  src/systems/tween_split.cpp
+  src/systems/tween_alt.cpp
   src/runtime/tween_train.cpp
   src/systems/tween.cpp
   src/gaps/registry.cpp

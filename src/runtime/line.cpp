@@ -1,6 +1,9 @@
 #include "welvet/runtime/line.hpp"
 
 #include "welvet/runtime/training.hpp"
+#include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_split.hpp"
+#include "welvet/systems/tween_alt.hpp"
 
 #include <string>
 #include <utility>
@@ -17,7 +20,7 @@ TensorF32 clone_t(const TensorF32& t) {
 
 Status gap_credit(Credit credit) {
   return Status::Gap(std::string("runtime.line Credit ") +
-                     std::to_string(static_cast<int>(credit)) + " (FamilyBP only on Metal)");
+                     std::to_string(static_cast<int>(credit)) + " (unsupported Line credit on Metal)");
 }
 
 } // namespace
@@ -36,6 +39,8 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
     return Status::Err(StatusCode::InvalidArgument, "line: RoleTrain needs target");
   }
 
+  if (credit != Credit::FamilyBP && credit != Credit::FamilyTween &&
+      credit != Credit::FamilyTweenSplit && credit != Credit::FamilyTweenAlt) return gap_credit(credit);
   std::vector<stack::Child*> flat;
   stack::flatten_ops(ops, &flat);
   const int n = static_cast<int>(flat.size());
@@ -110,21 +115,28 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
     out->loss = loss;
     out->popped_train = true;
 
-    if (credit != Credit::FamilyBP) {
-      return gap_credit(credit);
-    }
-
     TensorF32 g = std::move(gy);
     for (int j = n - 1; j >= 0; --j) {
-      TensorF32 g_in;
-      if (auto st_b = stack::child_family_bp(*flat[static_cast<std::size_t>(j)], g,
-                                             fl.ins[static_cast<std::size_t>(j)],
-                                             fl.pres[static_cast<std::size_t>(j)], lr, &g_in);
-          !st_b) {
-        return Status::Err(st_b.code, std::string("line bwd layer ") + std::to_string(j) + ": " +
-                                          st_b.message);
+      auto& child = *flat[static_cast<std::size_t>(j)];
+      const auto& input = fl.ins[static_cast<std::size_t>(j)];
+      const auto& pre = fl.pres[static_cast<std::size_t>(j)];
+      TensorF32 next;
+      Status credit_status;
+      if (credit == Credit::FamilyBP) {
+        credit_status = stack::child_family_bp(child,g,input,pre,lr,&next);
+      } else {
+        if (credit == Credit::FamilyTween)
+          credit_status = systems::tween::apply_projected(child,g,input,lr*0.5);
+        else if (credit == Credit::FamilyTweenSplit)
+          credit_status = systems::tween_split::apply_split_child(child,g,input,lr);
+        else
+          credit_status = systems::tween_alt::apply_alt_child(child,g,input,lr,1);
+        next.shape = input.shape;
+        next.data.assign(input.data.size(),0.0f);
+        if (g.data.size() == next.data.size()) next.data = g.data;
       }
-      g = std::move(g_in);
+      if (!credit_status) return credit_status;
+      g = std::move(next);
     }
   }
   st->flights = std::move(alive);

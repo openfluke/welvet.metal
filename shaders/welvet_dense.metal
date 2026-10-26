@@ -214,12 +214,45 @@ kernel void welvet_mse_grad(device const float *pred [[buffer(0)]],
   grad[gid] = sd_to_float(sd_div_uint(sd_mul_float(d, 2.0f), n));
 }
 
+// Keep tiny SGD updates in a 2^64-scaled domain. Metal arithmetic can flush
+// Float32 subnormals; encode their bits explicitly so a later phase can add a
+// small stored update back into the normal range without losing it.
+inline float2 sgd_scaled_f32(float x) {
+  uint raw = as_type<uint>(x), mag = raw & 0x7fffffffu;
+  if ((mag & 0x7f800000u) == 0) {
+    float v = ldexp(float(mag & 0x7fffffu), -85);
+    return float2((raw >> 31) ? -v : v, 0);
+  }
+  return float2(ldexp(x,64),0);
+}
+inline uint sgd_scaled_bits(float2 x) {
+  uint sign = as_type<uint>(x.x) & 0x80000000u;
+  if (sign) x = -x;
+  if (x.x >= 0x1p-62f) return sign | (as_type<uint>(ldexp(sd_to_float(x),-64)) & 0x7fffffffu);
+  float2 mant = sd_mul_float(x,0x1p85f);
+  float whole = floor(mant.x);
+  float2 rem = sd_add(mant,float2(-whole,0));
+  uint n = uint(whole);
+  if (rem.x > 0.5f || (rem.x == 0.5f && (rem.y > 0 || (rem.y == 0 && (n & 1u))))) ++n;
+  return sign | n;
+}
+inline float sgd_tiny_update(float old, float2 gradient, float2 lr) {
+  float2 g = sd_add(sgd_scaled_f32(gradient.x),sgd_scaled_f32(gradient.y));
+  uint step = sgd_scaled_bits(sd_mul(lr,g)); // Go rounds the step first.
+  return as_type<float>(sgd_scaled_bits(sd_add(sgd_scaled_f32(old),-sgd_scaled_f32(as_type<float>(step)))));
+}
+
 kernel void welvet_sgd_f32(device float *weights [[buffer(0)]],
                            device const float *grad [[buffer(1)]],
                            constant float2 &lr [[buffer(2)]], constant uint &n [[buffer(3)]],
                            uint gid [[thread_position_in_grid]]) {
   if (gid >= n)
     return;
+  if ((as_type<uint>(weights[gid]) & 0x7fffffffu) < 0x1f000000u &&
+      (as_type<uint>(grad[gid]) & 0x7fffffffu) < 0x1f000000u) {
+    weights[gid] = sgd_tiny_update(weights[gid],float2(grad[gid],0),lr);
+    return;
+  }
   // Go Float32 ApplySGD rounds the step before subtraction.
   const float step = abs(grad[gid]) < 1e-20f
                          ? ldexp(sd_to_float(sd_mul_float(lr, ldexp(grad[gid], 64))), -64)
@@ -234,6 +267,11 @@ kernel void welvet_sgd_f32_f64_grad(device float *weights [[buffer(0)]],
                                     uint gid [[thread_position_in_grid]]) {
   if (gid >= n)
     return;
+  if ((as_type<uint>(weights[gid]) & 0x7fffffffu) < 0x1f000000u &&
+      (as_type<uint>(grad[gid].x) & 0x7fffffffu) < 0x1f000000u) {
+    weights[gid] = sgd_tiny_update(weights[gid],grad[gid],lr);
+    return;
+  }
   const float step =
       abs(grad[gid].x) < 1e-20f
           ? ldexp(sd_to_float(sd_mul(lr, float2(ldexp(grad[gid].x, 64), ldexp(grad[gid].y, 64)))),

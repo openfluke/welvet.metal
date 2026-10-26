@@ -24,6 +24,7 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 | GDN | Metal Float32 truncated-BPTT; state/conv history stop-gradient |
 | Tween ModeTween | Metal block-average projection and local credit at lr×0.5; all 21 supported families / dtypes |
 | TweenChain ModeTweenChain | Metal full-lr chain-rule BP in leaves/volumes; all 21 supported families / dtypes |
+| Split / Alt and requested Step/Mesh variants | GPU 1/N scaling, refreshed global Alt phases, frozen Line per-hop credit, last-tick MeshTween and BPTT MeshTweenChain |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging remain |
 | Mesh gradient joins | Metal accumulation kernel; Dense mesh-clock ×34, disabled-cell and remote-link checks |
 | KMeans / Parallel NormalBP | Open; no CPU numerical fallback |
@@ -37,7 +38,7 @@ Float32 NormalBP/Line/Mesh smoke cases. Shared and static builds passed.
 Tween ModeTween also passes 80 case groups covering supported leaf and volume
 dtypes, plus GPU projection/nested-credit primitive checks. TweenChain adds 80
 case groups covering supported leaf/volume dtypes and true chain-rule credit.
-These are working-tree
+The eight requested Split/Alt/Line/Mesh sections add 576 case groups, plus hand-calculated credit and tiny-SGD primitive checks. These are working-tree
 validations; no new release tag is claimed.
 
 **Precision policy:** exact tensor bits where required by each case; finite loss
@@ -398,7 +399,7 @@ specified; loss uses the finite float2 band above. GDN leaf weights require
 existing Metal policy. KMeans and Parallel remain deferred because their
 NormalBP kernels are unavailable; no host numerical fallback is supplied.
 This sign-off is ModeTween only. TweenChain has its own sign-off below;
-TweenSplit, StepTween and MeshTween retain separate pending gates. Graph residency and performance tuning
+Split/Alt and the requested Step/Mesh variants have separate sign-offs below; proxy/cache/sparse variants remain pending. Graph residency and performance tuning
 remain open; benchmark timings include resetting the fixture.
 
 ## w2a Go↔Metal (TweenChain ModeTweenChain) — sign-off evidence
@@ -436,95 +437,177 @@ exercised here. Host code handles scheduling, allocation and tape/buffer staging
 
 **Validated:** 2026-10-26, unreleased. Exact tensor bits are required where
 specified; loss uses the finite float2 band above. GDN leaf updated weights
-require ≥strict; GDN volume retains its NormalBP ≥industry floor, including
+require ≥strict; global GDN Alt refreshed loss uses a finite relative `1e-5` band. GDN volume retains its NormalBP ≥industry floor, including
 input gradients. Volume weight subnormal flushing follows the existing Metal
 policy. KMeans/Parallel remain deferred; no CPU numerical fallback is supplied.
-This sign-off covers ModeTweenChain. StepTweenChain, MeshTweenChain and the
-remaining Tween variants retain separate gates. Graph residency and performance
+This sign-off covers ModeTweenChain. The requested Step/Mesh variants have separate sign-offs below; remaining proxy/cache/sparse variants retain pending gates. Graph residency and performance
 tuning remain open; benchmark timings include resetting the fixture.
 
 ## w2a Go↔Metal (TweenSplit ModeTweenSplit) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --tweensplit-train`  
-Wires: `TSB1`/`TSBO` (Stack 1/N @ full lr); `TSP1`/`TSPO` + `TRP1`…`MBTP` (volume leaf collect 1/N). Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–28 | Leaf kinds ×34 | [ ] | FamilyTweenSplit OpenSplitTape twin |
-| 29–48 | Volume 2×2×2×1 all signed kinds | [ ] | TSP1/TRP1… collect leaves 1/N |
+Wires: `TSB1`/`TSBO`; volume `TSP1`/`TSPO` and per-kind Split variants. `TestGoVMetalTweenSplitTrain`: **80 case groups**.
+
+Single collect tape; global 1/N share at full lr. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 21 supported families |
+| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenSplit ModeStepTweenSplit) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptweensplit-train`  
-Wires: `STS1`/`STSO` (Line FamilyTweenSplit 1/N @ full lr on pop); 3D via TweenSplit volume wires `TSP1`/`TRP1`… (MeshTweenSplit volume credit). Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–28 | Line leaf kinds ×34 | [ ] | FamilyTweenSplit per hop |
-| 29–48 | MeshTweenSplit volume 2×2×2×1 | [ ] | = ModeTweenSplit volume wires |
+Wires: `STS1`/`STSO`; shared volume `TSP1` and per-kind Split variants. `TestGoVMetalStepTweenSplitTrain`: **80 case groups**.
+
+Line per-hop Split at full lr; N counts trainable leaves under that hop. The popped global gap stays frozen. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 21 supported families |
+| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (TweenAlt ModeTweenAlt) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --tweenalt-train`  
-Wires: `TAB1`/`TABO` (Split→Tween AltTimes=1); `TAV1`/`TRA1`…`MBTA` volume. Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–28 | Leaf kinds ×34 | [ ] | Split @ full lr then Tween @ lr×0.5 |
-| 29–48 | Volume 2×2×2×1 all signed kinds | [ ] | re-forward between phases |
+Wires: `TAB1`/`TABO`; volume `TAV1` and per-kind Alt variants. `TestGoVMetalTweenAltTrain`: **80 case groups**.
+
+Split at full lr, refresh prediction and gap, then Tween at lr×0.5. AltTimes=1 is validated. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 21 supported families |
+| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenAlt ModeStepTweenAlt) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptweenalt-train`  
-Wires: `STA1`/`STAO` (Line FamilyTweenAlt Split→Tween on pop); 3D via TweenAlt volume wires `TAV1`/`TRA1`… (MeshTweenAlt volume credit). Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–28 | Line leaf kinds ×34 | [ ] | trainTweenAltOp frozen gap per hop |
-| 29–48 | MeshTweenAlt volume 2×2×2×1 | [ ] | = ModeTweenAlt volume wires |
+Wires: `STA1`/`STAO`; shared volume `TAV1` and per-kind Alt variants. `TestGoVMetalStepTweenAltTrain`: **80 case groups**.
+
+Line per-hop Split→Tween at full/half lr with a frozen popped gap. Its shared volume path refreshes the gap between phases. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 21 supported families |
+| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (MeshTween mesh-clock) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --meshtween-train`  
-Wires: `MTW1`/`MTWO` (mesh-clock FamilyTween @ lr×0.5); 3D via ModeTween volume `TWV1`/`TRV1`…. Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–3 | Dense MeshTween mesh-clock 111/211/222 | [ ] | MTW1 exact_bit + speed |
-| 4–23 | MeshTween volume 2×2×2×1 all signed kinds | [ ] | = ModeTween volume wires |
+Wires: `MTW1`/`MTWO`; shared volume `TWV1` and per-kind Tween variants. `TestGoVMetalMeshTweenTrain`: **48 case groups**.
+
+Last-tick captured mesh credit: projected local updates at lr×0.5; no BPTT. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense mesh-clock Float32 | [x] | 111 / 211 / 222; double-buffer ticks |
+| Dense mesh-clock ×34 | [x] | 111 / 211 native dtypes; benchmark reset checked |
+| Shared volume credit | [x] | All 21 supported families at 222 Float32; all 20 dtype-generic families at 211 ×34 |
+| Credit primitive | [x] | Hand-calculated two-cell update distinguishes local Tween from BPTT/full-lr credit |
+
+**Scope:** non-Dense mesh-clock parity remains open. Shared volume evidence exercises the Go ModeTween volume path; it does not establish mesh-clock parity for those cells.
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (MeshTweenChain mesh-clock) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --meshtweenchain-train`  
-Wires: `MTC1`/`MTCO` (mesh-clock FamilyBP ≡ MeshBP); 3D via ModeTweenChain volume `TCV1`/`TRC1`…. Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–3 | Dense MeshTweenChain mesh-clock 111/211/222 | [ ] | MTC1 exact_bit + speed |
-| 4–23 | MeshTweenChain volume 2×2×2×1 all signed kinds | [ ] | = ModeTweenChain volume wires |
+Wires: `MTC1`/`MTCO`; shared volume `TCV1` and per-kind TweenChain variants. `TestGoVMetalMeshTweenChainTrain`: **48 case groups**.
+
+Mesh-clock BPTT and SGD at full lr (FamilyBP, equivalent to MeshBP). Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense mesh-clock Float32 | [x] | 111 / 211 / 222; double-buffer ticks |
+| Dense mesh-clock ×34 | [x] | 111 / 211 native dtypes; benchmark reset checked |
+| Shared volume credit | [x] | All 21 supported families at 222 Float32; all 20 dtype-generic families at 211 ×34 |
+| Credit primitive | [x] | Hand-calculated two-cell update distinguishes local Tween from BPTT/full-lr credit |
+
+**Scope:** non-Dense mesh-clock parity remains open. Shared volume evidence exercises the Go ModeTweenChain volume path; it does not establish mesh-clock parity for those cells.
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTween ModeStepTween) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptween-train`  
-Wires: `STW1`/`STWO` (Line FamilyTween on pop @ lr×0.5); 3D via ModeTween volume wires `TWV1`/`TRV1`… (MeshTween volume credit). Exact_bit vs Go.  
-Each leaf ×34 kind prints **dtype / band / exact%W / goµs / mtlµs / spd%Δ**.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1 | Dense multi-hop Float32 (W/loss) | [ ] | Line StepTween soft_lr=lr×0.5 |
-| 2 | Dense 1-hop ×34 | [ ] | spectrum + speed table |
-| 3–28 | Other signed kinds f32 + ×34 | [ ] | Seq/Res leaf-projected |
-| 29–48 | MeshTween volume 2×2×2×1 all signed kinds | [ ] | = ModeTween volume wires |
+Wires: `STW1`/`STWO`; shared volume `TWV1` and per-kind Tween variants. `TestGoVMetalStepTweenTrain`: **80 case groups**.
+
+Line per-hop projected local credit at lr×0.5, applied when a training flight pops. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 21 supported families |
+| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenChain ModeStepTweenChain) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptweenchain-train`  
-Wires: `STC1`/`STCO` (Line FamilyBP on pop @ full lr); 3D via ModeTweenChain volume wires `TCV1`/`TRC1`…. Exact_bit vs Go.
+Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-| # | Case | Status | Notes |
-|---|---|:---:|---|
-| 1–28 | Line StepTweenChain leaf kinds ×34 | [ ] | FamilyTweenChain ≡ FamilyBP |
-| 29–48 | MeshTweenChain volume 2×2×2×1 | [ ] | = ModeTweenChain volume wires |
+Wires: `STC1`/`STCO`; shared volume `TCV1` and per-kind TweenChain variants. `TestGoVMetalStepTweenChainTrain`: **80 case groups**.
+
+Line per-hop true chain-rule BP at full lr, applied when a training flight pops. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
+| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
+| Volume 222 Float32 | [x] | All 21 supported families |
+| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
+| Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
+
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
 
 ## 1 — NormalBP
 
@@ -628,7 +711,7 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = reverse-hop volume 2�
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including all supported dtypes (GDN Float32 only). GDN leaf updated weights retain a ≥strict floor; other declared bands above apply. KMeans/Parallel and the other Tween variants remain open.
+**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including all supported dtypes (GDN Float32 only). GDN leaf updated weights retain a ≥strict floor; other declared bands above apply. KMeans/Parallel remain open; other variant evidence is recorded separately.
 
 ---
 
@@ -664,7 +747,7 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = volume Step 2×2×2×
 | Parallel | [ ] | [ ] | [ ] | |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including every supported dtype (GDN Float32 only). Full-rate chain-rule credit and volume input gradients are verified. GDN retains its declared precision floors; KMeans/Parallel and the Step/Mesh variants remain open.
+**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including every supported dtype (GDN Float32 only). Full-rate chain-rule credit and volume input gradients are verified. GDN retains its declared precision floors; KMeans/Parallel remain open. Step/Mesh evidence is recorded separately below.
 
 ---
 
@@ -676,31 +759,31 @@ Ship: `runtime/line` Credit::FamilyTween on pop (`apply_projected` @ `lr×0.5`);
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
 
 ---
 
@@ -712,31 +795,31 @@ Ship: `runtime/line` Credit::FamilyBP on pop (same credit as StepBP / TweenChain
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
 
 ---
 
@@ -775,35 +858,35 @@ Go ModeMeshBP on grid also = volume Forward+Step (cameral_train). Dense mesh-clo
 
 Needs Mesh + Tween.  
 Ship: `runtime/step` `Credit::FamilyTween` — Forward×ticks → last-tick `apply_cell_projected` @ `lr×0.5` (`MTW1`/`MTWO`); w2a `--meshtween-train`.  
-**3D volumetric** = ModeTween volume credit (`TWV1`/`TRV1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**3D volumetric** = ModeTween volume credit (`TWV1`/`TRV1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| LayerNorm | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| SwiGLU | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Softmax | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Embedding | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| MHA | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| CNN1 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| CNN2 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| CNN3 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| ConvT1 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| ConvT2 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| ConvT3 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| RNN | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| LSTM | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Sequential | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Residual | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Metacognition | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| GDN | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** Dense clock verified at 111/211/222 Float32 and 111/211 ×34; all supported shared volume families/dtypes verified. Non-Dense clock parity remains open.
 
 ---
 
@@ -811,70 +894,70 @@ Ship: `runtime/step` `Credit::FamilyTween` — Forward×ticks → last-tick `app
 
 Needs Mesh + TweenChain.  
 Ship: `runtime/step` `Credit::FamilyBP` under mesh clock (`MTC1`/`MTCO` ≡ MeshBP); w2a `--meshtweenchain-train`.  
-**3D volumetric** = ModeTweenChain volume credit (`TCV1`/`TRC1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**3D volumetric** = ModeTweenChain volume credit (`TCV1`/`TRC1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| LayerNorm | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| SwiGLU | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Softmax | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Embedding | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| MHA | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| CNN1 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| CNN2 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| CNN3 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| ConvT1 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| ConvT2 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| ConvT3 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| RNN | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| LSTM | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Sequential | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Residual | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| Metacognition | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| GDN | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** Dense clock verified at 111/211/222 Float32 and 111/211 ×34; all supported shared volume families/dtypes verified. Non-Dense clock parity remains open.
 
 ---
 
 ## 10 — TweenSplit
 
 Ship: `systems::tween_split` + `runtime/tween_split_train` — collect trainable leaves, apply \(g_i=\frac1N P(g_y)\) @ full lr (`TSB1`/`TSP1`/`TRP1`…); w2a `--tweensplit-train`.  
-CNN2/3 & ConvT2/3 share CNN1/ConvT1 path. Softmax weightless (N may be 0).
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. Softmax weightless (N may be 0).
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
 
 ---
 
@@ -882,64 +965,71 @@ CNN2/3 & ConvT2/3 share CNN1/ConvT1 path. Softmax weightless (N may be 0).
 
 Needs Line + TweenSplit.  
 Ship: `runtime/line` Credit::FamilyTweenSplit on pop (`apply_split_child` 1/N @ full lr); wire `STS1`/`STSO`; w2a `--steptweensplit-train`.  
-**3D volumetric** = MeshTweenSplit volume (= ModeTweenSplit / TweenSplit volume wires `TSP1`/`TRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**3D volumetric** = MeshTweenSplit volume (= ModeTweenSplit / TweenSplit volume wires `TSP1`/`TRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-CNN2/3 & ConvT2/3 share CNN1/ConvT1 path. Default AltTimes=1.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+
+---
+
+## 12 — TweenAlt
+
+ModeTweenAlt: Split at full lr, refresh the prediction/gap, then Tween at lr×0.5.
+Ship: `systems/tween_alt` + `runtime/tween_alt_train`; `TAB1`/`TABO` and `TAV1`/per-kind volume wires.
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. Default AltTimes=1.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
 
 ---
 
@@ -947,267 +1037,267 @@ CNN2/3 & ConvT2/3 share CNN1/ConvT1 path. Default AltTimes=1.
 
 Needs Line + TweenAlt.  
 Ship: `runtime/line` Credit::FamilyTweenAlt on pop (`apply_alt_child` Split→Tween frozen gap); wire `STA1`/`STAO`; w2a `--steptweenalt-train`.  
-**3D volumetric** = MeshTweenAlt volume (= ModeTweenAlt / TweenAlt volume wires `TAV1`/`TRA1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**3D volumetric** = MeshTweenAlt volume (= ModeTweenAlt / TweenAlt volume wires `TAV1`/`TRA1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-**3D volumetric** = ModeTweenSplit / TweenSplit volume credit (`TSP1`/`TRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**3D volumetric** = ModeTweenSplit / TweenSplit volume credit (`TSP1`/`TRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-**3D volumetric** = ModeTweenAlt / TweenAlt volume credit (`TAV1`/`TRA1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**3D volumetric** = ModeTweenAlt / TweenAlt volume credit (`TAV1`/`TRA1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-**3D volumetric** = ModeTweenSplitFastProxy / TweenSplitFastProxy volume credit (`FPV1`/`FRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**3D volumetric** = ModeTweenSplitFastProxy / TweenSplitFastProxy volume credit (`FPV1`/`FRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
-**3D volumetric** = ModeTweenSplitSparse / TweenSplitSparse volume credit (`SPV1`/`SRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**3D volumetric** = ModeTweenSplitSparse / TweenSplitSparse volume credit (`SPV1`/`SRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
 
 ---
 
@@ -1435,7 +1525,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
-| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. Non-Dense mesh-clock parity remains open. ModeTween: 80 case groups, supported leaf/volume dtypes, Metal projection/local credit and benchmark reset checks passed. ModeTweenChain: 80 groups, supported leaf/volume dtypes, full-lr chain-rule credit and true input gradients validated. |
+| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. Non-Dense mesh-clock parity remains open. ModeTween: 80 case groups, supported leaf/volume dtypes, Metal projection/local credit and benchmark reset checks passed. ModeTweenChain: 80 groups, supported leaf/volume dtypes, full-lr chain-rule credit and true input gradients validated. Eight requested Split/Alt/Step/Mesh sections: 576 groups; tiny-SGD preservation and credit/phase primitives verified. |
 | `0.19-m2-meshbp` | StepBP Line + MeshBP Go↔Metal: STB1 Line FamilyBP × kinds (+×34) + MBP1 Dense mesh-clock 111/211/222 + ModeMeshBP vol 222 for NormalBP-signed kinds (`runtime/line` + `runtime/step`; KMeans Line deferred) |
 | `0.18-m2-stack-nbp` | Stack NestedStack-of-Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`STKB`/`STKV`; Dense Dim→Dim Linear, loom n_children×[Dim×Dim]; bind_stack) |
 | `0.17-m2-gdn-nbp` | GDN NormalBP Go↔Metal: leaf ≥loose + volume 111/chain/222 ≥industry f32-only (`GDB1`/`GDV1`; truncated-BPTT; Metal≡cpp host f32 scan) |

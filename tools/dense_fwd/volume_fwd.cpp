@@ -2,6 +2,8 @@
 
 #include "volume_fwd.hpp"
 #include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_split.hpp"
+#include "welvet/systems/tween_alt.hpp"
 #include "welvet/systems/tween_chain.hpp"
 
 #include "welvet/architecture.hpp"
@@ -1848,9 +1850,13 @@ int run_volume_normalbp(int bench_iters, VolumeTrainMode mode) {
                                             std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -1888,7 +1894,7 @@ int run_volume_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "TCVO" : (tween ? "TWVO" : "WVNO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "TAVO" : (mode == VolumeTrainMode::TweenSplit ? "TSPO" : (mode == VolumeTrainMode::TweenChain ? "TCVO" : (tween ? "TWVO" : "WVNO")))), 4) || !write_exact(&loss, 1)) return 2;
   if (mode == VolumeTrainMode::NormalBP) {
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
@@ -2142,9 +2148,13 @@ int run_volume_rmsnorm_normalbp(int bench_iters, VolumeTrainMode mode) {
                                               std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -2182,7 +2192,7 @@ int run_volume_rmsnorm_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "TRCO" : (tween ? "TRVO" : "WRVO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "TRAO" : (mode == VolumeTrainMode::TweenSplit ? "TRPO" : (mode == VolumeTrainMode::TweenChain ? "TRCO" : (tween ? "TRVO" : "WRVO")))), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -2442,9 +2452,13 @@ int run_volume_layernorm_normalbp(int bench_iters, VolumeTrainMode mode) {
                                                 std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -2482,7 +2496,7 @@ int run_volume_layernorm_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "TLCO" : (tween ? "TLVO" : "WLVO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "TLAO" : (mode == VolumeTrainMode::TweenSplit ? "TLPO" : (mode == VolumeTrainMode::TweenChain ? "TLCO" : (tween ? "TLVO" : "WLVO")))), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -2762,9 +2776,13 @@ int run_volume_swiglu_normalbp(int bench_iters, VolumeTrainMode mode) {
                                              std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -2802,7 +2820,7 @@ int run_volume_swiglu_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "TSCO" : (tween ? "TSVO" : "WSVO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "TGAO" : (mode == VolumeTrainMode::TweenSplit ? "TGPO" : (mode == VolumeTrainMode::TweenChain ? "TSCO" : (tween ? "TSVO" : "WSVO")))), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -3099,9 +3117,13 @@ int run_volume_softmax_normalbp(int bench_iters, VolumeTrainMode mode) {
                                               std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -3139,7 +3161,7 @@ int run_volume_softmax_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "TXCO" : (tween ? "TXVO" : "WXVO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "TXAO" : (mode == VolumeTrainMode::TweenSplit ? "TXPO" : (mode == VolumeTrainMode::TweenChain ? "TXCO" : (tween ? "TXVO" : "WXVO")))), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -3393,9 +3415,13 @@ int run_volume_embedding_normalbp(int bench_iters, VolumeTrainMode mode) {
                                                 std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -3433,7 +3459,7 @@ int run_volume_embedding_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "TECO" : (tween ? "TEVO" : "WEVO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "TEAO" : (mode == VolumeTrainMode::TweenSplit ? "TEPO" : (mode == VolumeTrainMode::TweenChain ? "TECO" : (tween ? "TEVO" : "WEVO")))), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -3751,9 +3777,13 @@ int run_volume_mha_normalbp(int bench_iters, VolumeTrainMode mode) {
                                           std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) {
       return st;
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -3791,7 +3821,7 @@ int run_volume_mha_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
   }
 
-  if (!write_exact((mode == VolumeTrainMode::TweenChain ? "THCO" : (tween ? "THVO" : "WHVO")), 4) || !write_exact(&loss, 1)) return 2;
+  if (!write_exact((mode == VolumeTrainMode::TweenAlt ? "THAO" : (mode == VolumeTrainMode::TweenSplit ? "THPO" : (mode == VolumeTrainMode::TweenChain ? "THCO" : (tween ? "THVO" : "WHVO")))), 4) || !write_exact(&loss, 1)) return 2;
   const int32_t gin_n = static_cast<int32_t>(bwd.grad_in.data.size());
   if (!write_exact(&gin_n, 1) || !write_exact(bwd.grad_in.data.data(), bwd.grad_in.data.size())) {
     return 2;
@@ -4369,7 +4399,11 @@ int run_volume_cnn1_normalbp(int bench_iters, VolumeTrainMode mode) {
                                            std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -4419,7 +4453,7 @@ int run_volume_cnn1_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "C1CO" : (tween ? "C1TO" : "C1VO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "C1AO" : (mode == VolumeTrainMode::TweenSplit ? "C1PO" : (mode == VolumeTrainMode::TweenChain ? "C1CO" : (tween ? "C1TO" : "C1VO")))), loss, bwd, fwd, Ws);
 }
 
 // C2V1 — Volume CNN2 NormalBP
@@ -4527,7 +4561,11 @@ int run_volume_cnn2_normalbp(int bench_iters, VolumeTrainMode mode) {
                                            std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -4577,7 +4615,7 @@ int run_volume_cnn2_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "C2CO" : (tween ? "C2TO" : "C2VO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "C2AO" : (mode == VolumeTrainMode::TweenSplit ? "C2PO" : (mode == VolumeTrainMode::TweenChain ? "C2CO" : (tween ? "C2TO" : "C2VO")))), loss, bwd, fwd, Ws);
 }
 
 // C3V1 — Volume CNN3 NormalBP
@@ -4691,7 +4729,11 @@ int run_volume_cnn3_normalbp(int bench_iters, VolumeTrainMode mode) {
                                            std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -4741,7 +4783,7 @@ int run_volume_cnn3_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "C3CO" : (tween ? "C3TO" : "C3VO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "C3AO" : (mode == VolumeTrainMode::TweenSplit ? "C3PO" : (mode == VolumeTrainMode::TweenChain ? "C3CO" : (tween ? "C3TO" : "C3VO")))), loss, bwd, fwd, Ws);
 }
 
 
@@ -5209,7 +5251,11 @@ int run_volume_convt1_normalbp(int bench_iters, VolumeTrainMode mode) {
                                              std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -5259,7 +5305,7 @@ int run_volume_convt1_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "T1CO" : (tween ? "T1TO" : "T1VO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "T1AO" : (mode == VolumeTrainMode::TweenSplit ? "T1PO" : (mode == VolumeTrainMode::TweenChain ? "T1CO" : (tween ? "T1TO" : "T1VO")))), loss, bwd, fwd, Ws);
 }
 
 int run_volume_convt2_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -5361,7 +5407,11 @@ int run_volume_convt2_normalbp(int bench_iters, VolumeTrainMode mode) {
                                              std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -5411,7 +5461,7 @@ int run_volume_convt2_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "T2CO" : (tween ? "T2TO" : "T2VO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "T2AO" : (mode == VolumeTrainMode::TweenSplit ? "T2PO" : (mode == VolumeTrainMode::TweenChain ? "T2CO" : (tween ? "T2TO" : "T2VO")))), loss, bwd, fwd, Ws);
 }
 
 int run_volume_convt3_normalbp(int bench_iters, VolumeTrainMode mode) {
@@ -5517,7 +5567,11 @@ int run_volume_convt3_normalbp(int bench_iters, VolumeTrainMode mode) {
                                              std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -5567,7 +5621,7 @@ int run_volume_convt3_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "T3CO" : (tween ? "T3TO" : "T3VO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "T3AO" : (mode == VolumeTrainMode::TweenSplit ? "T3PO" : (mode == VolumeTrainMode::TweenChain ? "T3CO" : (tween ? "T3TO" : "T3VO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -5786,7 +5840,11 @@ int run_volume_rnn_normalbp(int bench_iters, VolumeTrainMode mode) {
                                           std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -5836,7 +5894,7 @@ int run_volume_rnn_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "RNCO" : (tween ? "RNTO" : "RNVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "RNAO" : (mode == VolumeTrainMode::TweenSplit ? "RNPO" : (mode == VolumeTrainMode::TweenChain ? "RNCO" : (tween ? "RNTO" : "RNVO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -6065,7 +6123,11 @@ int run_volume_lstm_normalbp(int bench_iters, VolumeTrainMode mode) {
                                            std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -6115,7 +6177,7 @@ int run_volume_lstm_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "LSCO" : (tween ? "LSTO" : "LSVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "LSAO" : (mode == VolumeTrainMode::TweenSplit ? "LSPO" : (mode == VolumeTrainMode::TweenChain ? "LSCO" : (tween ? "LSTO" : "LSVO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -6343,7 +6405,11 @@ int run_volume_sequential_normalbp(int bench_iters, VolumeTrainMode mode) {
                                                  std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -6393,7 +6459,7 @@ int run_volume_sequential_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "SQCO" : (tween ? "SQTO" : "SQVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "SQAO" : (mode == VolumeTrainMode::TweenSplit ? "SQPO" : (mode == VolumeTrainMode::TweenChain ? "SQCO" : (tween ? "SQTO" : "SQVO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -6621,7 +6687,11 @@ int run_volume_residual_normalbp(int bench_iters, VolumeTrainMode mode) {
                                                std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -6671,7 +6741,7 @@ int run_volume_residual_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "RECO" : (tween ? "RETO" : "REVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "REAO" : (mode == VolumeTrainMode::TweenSplit ? "REPO" : (mode == VolumeTrainMode::TweenChain ? "RECO" : (tween ? "RETO" : "REVO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -6900,7 +6970,11 @@ int run_volume_mamba_normalbp(int bench_iters, VolumeTrainMode mode) {
                                             std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -6950,7 +7024,7 @@ int run_volume_mamba_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "MBCO" : (tween ? "MBTO" : "MBVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "MBAO" : (mode == VolumeTrainMode::TweenSplit ? "MBSO" : (mode == VolumeTrainMode::TweenChain ? "MBCO" : (tween ? "MBTO" : "MBVO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -7171,7 +7245,11 @@ int run_volume_metacognition_normalbp(int bench_iters, VolumeTrainMode mode) {
                                                     std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -7221,7 +7299,7 @@ int run_volume_metacognition_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "MCCO" : (tween ? "MCTO" : "MCVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "MCAO" : (mode == VolumeTrainMode::TweenSplit ? "MCSO" : (mode == VolumeTrainMode::TweenChain ? "MCCO" : (tween ? "MCTO" : "MCVO")))), loss, bwd, fwd, Ws);
 }
 // Included patterns for GDN/STK NormalBP — appended to volume_fwd.cpp
 
@@ -7474,7 +7552,11 @@ int run_volume_gdn_normalbp(int bench_iters, VolumeTrainMode mode) {
                                           std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -7524,7 +7606,7 @@ int run_volume_gdn_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "GDCO" : (tween ? "GDTO" : "GDVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "GDAO" : (mode == VolumeTrainMode::TweenSplit ? "GDSO" : (mode == VolumeTrainMode::TweenChain ? "GDCO" : (tween ? "GDTO" : "GDVO")))), loss, bwd, fwd, Ws);
 }
 
 // ---------------------------------------------------------------------------
@@ -7761,7 +7843,11 @@ int run_volume_stack_normalbp(int bench_iters, VolumeTrainMode mode) {
                                             std::move(layer));
       if (!st) return st;
     }
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss);
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::systems::tween_split::train_volume_mse(g,fwd,target,lr,&loss);
     if (tween) return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     if (mode == VolumeTrainMode::TweenChain)
       return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
@@ -7811,5 +7897,5 @@ int run_volume_stack_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenChain ? "SKCO" : (tween ? "SKTO" : "STVO")), loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out((mode == VolumeTrainMode::TweenAlt ? "SKAO" : (mode == VolumeTrainMode::TweenSplit ? "SKSO" : (mode == VolumeTrainMode::TweenChain ? "SKCO" : (tween ? "SKTO" : "STVO")))), loss, bwd, fwd, Ws);
 }

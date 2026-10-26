@@ -8,6 +8,8 @@
 #include "welvet/layer.hpp"
 #include "welvet/runtime/line.hpp"
 #include "welvet/runtime/tween_train.hpp"
+#include "welvet/runtime/tween_split_train.hpp"
+#include "welvet/runtime/tween_alt_train.hpp"
 #include "welvet/runtime/tween_chain_train.hpp"
 #include "welvet/runtime/step.hpp"
 #include "welvet/stack.hpp"
@@ -765,7 +767,7 @@ int run_meshtweensplitsparse(int bench_iters) {
                               "MSS1", "MSSO");
 }
 
-int run_stepbp(int bench_iters) {
+int run_stepbp(int bench_iters, welvet::runtime::line::Credit credit, const char* response) {
   int32_t n_children = 0, n_ticks = 0, batch = 0;
   double lr = 0.0;
   if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
@@ -831,7 +833,7 @@ int run_stepbp(int bench_iters) {
       tgt.shape.assign(t_shape.begin(), t_shape.end());
       tgt.data = tgts[static_cast<std::size_t>(t)];
       double tick_loss = 0.0;
-      if (auto s = welvet::runtime::line::train_mse(stack, &st, xin, tgt, lr, &tick_loss); !s) {
+      if (auto s = welvet::runtime::line::train_mse(stack, &st, xin, tgt, lr, &tick_loss, credit); !s) {
         return s;
       }
       loss = tick_loss;
@@ -868,7 +870,7 @@ int run_stepbp(int bench_iters) {
     }
   }
 
-  if (!write_magic("STBO") || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
+  if (!write_magic(response) || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
   for (int32_t i = 0; i < n_children; ++i) {
     const auto& ch = stack.children[static_cast<std::size_t>(i)];
     const int32_t nw = welvet::stack::child_grad_w_size(ch);
@@ -886,8 +888,12 @@ int run_stepbp(int bench_iters) {
   return 0;
 }
 
-int run_tween_leaf(int bench_iters, bool chain) {
-  const char* request = chain ? "TCB1" : "TWB1";
+int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
+  const bool chain = mode == VolumeTrainMode::TweenChain;
+  const char* request = mode == VolumeTrainMode::TweenSplit ? "TSB1" :
+                        mode == VolumeTrainMode::TweenAlt ? "TAB1" : chain ? "TCB1" : "TWB1";
+  const char* response = mode == VolumeTrainMode::TweenSplit ? "TSBO" :
+                         mode == VolumeTrainMode::TweenAlt ? "TABO" : chain ? "TCBO" : "TWBO";
   int32_t n_children = 0, n_ticks = 0, batch = 0;
   double lr = 0.0;
   if (!read_exact(&n_children, 1) || !read_exact(&n_ticks, 1) || !read_exact(&batch, 1) ||
@@ -945,6 +951,10 @@ int run_tween_leaf(int bench_iters, bool chain) {
       if (!read_child(replay, &child))
         return welvet::Status::Err(welvet::StatusCode::Internal, "invalid Tween child replay");
     }
+    if (mode == VolumeTrainMode::TweenSplit)
+      return welvet::runtime::tween_split_train::train_stack_mse(stack,xin,target,lr,&loss);
+    if (mode == VolumeTrainMode::TweenAlt)
+      return welvet::runtime::tween_alt_train::train_stack_mse(stack,xin,target,lr,&loss);
     if (chain)
       return welvet::runtime::tween_chain_train::train_stack_mse(stack, xin, target, lr, &loss);
     return welvet::runtime::tween_train::train_stack_mse(stack, xin, target, lr, &loss);
@@ -978,7 +988,7 @@ int run_tween_leaf(int bench_iters, bool chain) {
     }
   }
 
-  if (!write_magic(chain ? "TCBO" : "TWBO") || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
+  if (!write_magic(response) || !write_exact(&loss, 1) || !write_exact(&n_children, 1)) return 2;
   for (int32_t i = 0; i < n_children; ++i) {
     auto& ch = stack.children[static_cast<std::size_t>(i)];
     const int nw = welvet::stack::child_grad_w_size(ch);

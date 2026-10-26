@@ -37,10 +37,20 @@ for arg in "$@"; do
     --metacognition-train) MODE="metacognition_train" ;;
     --gdn-train) MODE="gdn_train" ;;
     --stack-train) MODE="stack_train" ;;
+    --tween-next-all) MODE="tween_next_all" ;;
+    --tweensplit-train) MODE="tweensplit_train" ;;
+    --steptweensplit-train) MODE="steptweensplit_train" ;;
+    --tweenalt-train) MODE="tweenalt_train" ;;
+    --steptweenalt-train) MODE="steptweenalt_train" ;;
+    --meshtween-train) MODE="meshtween_train" ;;
+    --meshtweenchain-train) MODE="meshtweenchain_train" ;;
+    --steptween-train) MODE="steptween_train" ;;
+    --steptweenchain-train) MODE="steptweenchain_train" ;;
     --tweenchain-train) MODE="tweenchain_train" ;;
     --tween-train) MODE="tween_train" ;;
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
+      echo "training batch: --tween-next-all (eight requested modes + Metal-only checks)"
       echo "usage: $0 [--normalbp-all|--metal-only|--dense-train|…|--stack-train|--stepbp-train|--tween-train|--tweenchain-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
       exit 0
@@ -129,6 +139,60 @@ if [[ "$MODE" == "stack_train" ]]; then
   go test ./tests/go_v_metal -v -count=1 -run '^TestGoVMetalStackTrain$' -timeout 60m
   exit 0
 fi
+if [[ "$MODE" == "tween_next_all" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetal(TweenSplit|StepTweenSplit|TweenAlt|StepTweenAlt|MeshTween|MeshTweenChain|StepTween|StepTweenChain)Train|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "tweensplit_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalTweenSplitTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "steptweensplit_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalStepTweenSplitTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "tweenalt_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalTweenAltTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "steptweenalt_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalStepTweenAltTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "meshtween_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalMeshTweenTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "meshtweenchain_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalMeshTweenChainTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "steptween_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalStepTweenTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
+if [[ "$MODE" == "steptweenchain_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalStepTweenChainTrain|TestGoVMetalOnly)$' -timeout 30m
+  exit 0
+fi
+
 if [[ "$MODE" == "tweenchain_train" ]]; then
   export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
   go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalTweenChainTrain|TestGoVMetalOnly)$' -timeout 30m

@@ -1,5 +1,6 @@
 #include "welvet/metal/training.hpp"
 #include "welvet/runtime/step.hpp"
+#include "welvet/systems/tween.hpp"
 
 #include "welvet/runtime/backward.hpp"
 #include "welvet/runtime/forward.hpp"
@@ -316,9 +317,9 @@ Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32&
   if (ticks <= 0) {
     return Status::Err(StatusCode::InvalidArgument, "step: ticks <= 0");
   }
-  if (credit != Credit::FamilyBP) {
+  if (credit != Credit::FamilyBP && credit != Credit::FamilyTween) {
     return Status::Gap(std::string("runtime.step Credit ") +
-                       std::to_string(static_cast<int>(credit)) + " (FamilyBP only on Metal)");
+                       std::to_string(static_cast<int>(credit)) + " (unsupported mesh credit on Metal)");
   }
 
   State st;
@@ -342,6 +343,25 @@ Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32&
     return s;
   }
 
+  if (credit == Credit::FamilyTween) {
+    const auto& inputs = st.history_in.back();
+    const auto& pres = st.history_pre.back();
+    TensorF32 gap = std::move(gy);
+    for (int idx = int(g.cells.size())-1; idx >= 0; --idx) {
+      auto& cell = g.cells[size_t(idx)];
+      const auto& cin = inputs[size_t(idx)];
+      if (cell.meta.is_disabled || cin.data.empty() || pres[size_t(idx)].data.empty() ||
+          st.layer_data[size_t(idx)].data.empty()) continue;
+      if (auto s = systems::tween::apply_cell_projected(cell,gap,cin,pres[size_t(idx)],
+                         st.layer_data[size_t(idx)],lr*0.5); !s) return s;
+      TensorF32 next;
+      next.shape = cin.shape;
+      next.data.assign(cin.data.size(),0.0f);
+      if (gap.data.size() == next.data.size()) next.data = gap.data;
+      gap = std::move(next);
+    }
+    return Status::Ok();
+  }
   TensorF32 gin;
   std::vector<TensorF32> dws;
   if (auto s = backward(g, &st, gy, &gin, &dws); !s) {

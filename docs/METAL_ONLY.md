@@ -36,12 +36,25 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   original forward inputs during local updates. All 21 supported families have
   leaf/volume evidence, including all supported dtypes (GDN Float32 only).
   GDN leaf updated weights use a ≥strict floor; other Tween leaf weights are
-  exact, with the finite loss band above. Other Tween variants retain separate gates.
+  exact, with the finite loss band above. Further variants retain separate gates.
 - TweenChain ModeTweenChain uses Metal chain-rule backward and SGD at full lr.
   All 21 supported families have leaf/volume evidence, including all supported
   dtypes (GDN Float32 only). The volume path shares NormalBP credit, with actual
   input gradients checked through TweenChain wires. GDN leaf updated weights
-  retain ≥strict; GDN volume retains ≥industry. Step/Mesh variants remain open.
+  retain ≥strict; GDN volume retains ≥industry. Step/Mesh variants have separate coverage below.
+- TweenSplit uses one collect tape and GPU projection/scaling by 1/N at full lr.
+  TweenAlt refreshes prediction and gap between Split and Tween phases (AltTimes=1
+  tested). StepTween/Split/Alt use frozen popped gaps; StepTweenChain uses true BP.
+  The six leaf/Line sections each cover 80 groups, including supported leaf and
+  volume dtypes across all 21 supported families (GDN Float32 only).
+- MeshTween uses captured last-tick local credit at half lr; MeshTweenChain uses
+  BPTT at full lr. Each has 48 groups: Dense clock 111/211/222 Float32, clock
+  111/211 ×34, and all supported shared volume families/dtypes. Non-Dense clock
+  parity remains open. Proxy/cache/sparse credit modes remain unsupported.
+- Float32 SGD encodes tiny steps in a scaled GPU representation so stored
+  subnormals survive later phases that produce normal-range weights. Other
+  kernel subnormal limits remain as documented. GDN Alt refreshed loss uses
+  its finite relative 1e-5 band; GDN weights still require ≥strict.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
   Promoted reductions and transcendentals use float2 before rounding to Float32.
 
@@ -73,6 +86,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/macos_build_w2a.sh --stepbp-train
 ./scripts/macos_build_w2a.sh --tween-train
 ./scripts/macos_build_w2a.sh --tweenchain-train
+./scripts/macos_build_w2a.sh --tween-next-all
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
@@ -87,6 +101,9 @@ leaf/volume dtype sweeps) and `TestGoVMetalOnly`, which also checks projection
 and nested local credit. The TweenChain runner executes
 `TestGoVMetalTweenChainTrain` (80 case groups with leaf/volume dtype sweeps) plus
 `TestGoVMetalOnly`, including hand-calculated chain-rule/full-rate checks.
+The `--tween-next-all` batch covers the eight requested Split/Alt/Step/Mesh sections
+(576 groups) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
+action flights, unsupported credit rejection and subnormal SGD storage.
 Line, Tween and TweenChain benchmark iterations reset all
 weights/configuration before each run and
 return the real final loss; reset cost is included. All runners default to one

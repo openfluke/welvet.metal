@@ -1,6 +1,7 @@
 #pragma once
+#include "welvet/runtime/line.hpp"
 
-enum class VolumeTrainMode { NormalBP, Tween, TweenChain };
+enum class VolumeTrainMode { NormalBP, Tween, TweenChain, TweenSplit, TweenAlt };
 
 // Volume mount-once forwards (Metal). Bench → WVB2 (mount_ns + exec_ns + iters) + WVFO.
 int run_volume_dense_fwd(int bench_iters);     // WVF1
@@ -102,8 +103,11 @@ int run_volume_gdn_normalbp(int bench_iters, VolumeTrainMode mode = VolumeTrainM
 int run_stack_normalbp(int bench_iters);               // STKB → STKO (+ optional WVB1)
 
 // Line StepBP + MeshBP FamilyBP (training)
-int run_stepbp(int bench_iters);                       // STB1 → STBO (+ optional WVB1)
+int run_stepbp(int bench_iters, welvet::runtime::line::Credit credit = welvet::runtime::line::Credit::FamilyBP, const char* response = "STBO");                       // STB1 → STBO (+ optional WVB1)
 int run_meshbp(int bench_iters);                       // MBP1 → MBPO (+ optional WVB1)
 int run_volume_stack_normalbp(int bench_iters, VolumeTrainMode mode = VolumeTrainMode::NormalBP);        // STKV → STVO (+ optional WVB1)
 
-int run_tween_leaf(int bench_iters, bool chain = false);
+int run_tween_leaf(int bench_iters, VolumeTrainMode mode = VolumeTrainMode::Tween);
+
+int run_meshtween(int bench_iters);
+int run_meshtweenchain(int bench_iters);
