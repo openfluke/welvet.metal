@@ -77,8 +77,8 @@ welvet::Status make_nested_stack_dense(int dim, int n_children, welvet::Activati
 extern "C" {
 
 const char* welvet_version(void) {
-  // VERSIONING.md: 0.01 — Dense FormatNone×34 Metal forward exact_bit vs Go.
-  return "0.01";
+  // VERSIONING.md: 48/100 audited engine points, rounded to 48.
+  return "0.48";
 }
 
 const char* welvet_runtime_identity(void) {

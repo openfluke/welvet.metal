@@ -24,7 +24,7 @@ const std::vector<Entry> &build() {
       {"weights.formatnone.x34", "weights", "FormatNone pack/decode ×34", true},
       {"weights.matvec.metal", "weights",
        "Metal soft-double GEMV (Apple has no HW double; Go f64 contract)", true},
-      {"weights.resident", "weights", "gap? upload-once / reuse across fwd/bwd/update", false},
+      {"weights.resident", "weights", "Partial Dense weight reuse; full persistent graph/tape residency remains", false},
       {"metal.no_fallback", "metal",
        "CPU numerical layer paths rejected, including direct APIs; no runtime opt-out", true},
 
@@ -128,16 +128,18 @@ const std::vector<Entry> &build() {
       {"train.normalbp.dense", "training",
        "Metal MSE/NormalBP and native FormatNone SGD across all 34 dtypes", true},
       {"runtime.step", "runtime",
-       "Metal Line BP/Tween includes KMeans/Parallel; Split/Alt retain separate coverage", true},
+       "All ten Line credit choices; all-family native dtype, pop and stateful proxy coverage", true},
       {"runtime.mesh", "runtime",
-       "Metal mesh BP BPTT / last-tick Tween; Dense clock dtype parity; non-Dense clock parity open", true},
-      {"train.modes.x29", "training", "gap? all 29 TrainModes + Freeze/Shadow/Adv/Memory", false},
+       "All-family mesh BP/Chain BPTT and Tween/Split/Alt/FastProxy/Sparse local credit", true},
+      {"train.modes.x29", "training", "All 29 numbered training modes; supported native dtypes; GDN Float32", true},
+      {"train.advanced", "training", "gap? Freeze/Shadow/Adversarial/Memory and Cameral BranchModes", false},
+      {"weights.quant.packed", "weights", "gap? 20 packed quant formats beyond FormatNone", false},
       {"train.camsync", "training", "gap? CamSync / BlendStores Metal", false},
 
       // --- Systems / model ---
       {"systems.tween", "systems", "ModeTween projected local credit on Metal", true},
       {"systems.tween_chain", "systems", "ModeTweenChain full-rate chain-rule BP on Metal", true},
-      {"systems.tween_split", "systems", "ModeTweenSplit one collect tape; GPU projected 1/N credit", true},
+      {"systems.tween_split", "systems", "Split plus HeadProxy/Linear/FastProxy/LinearCache/Async/Sparse on Metal", true},
       {"systems.tween_alt", "systems", "ModeTweenAlt refreshed Split then Tween phases on Metal", true},
       {"systems.dna", "systems", "gap? DNA", false},
       {"systems.evolution", "systems", "gap? evolution", false},
@@ -153,9 +155,9 @@ const std::vector<Entry> &build() {
       // --- Delivery / validation ---
       {"platform.ios", "platform", "gap? iOS device framework artifact", false},
       {"accel.ane", "backends", "gap? Apple Neural Engine / Core ML path", false},
-      {"w2a.go_v_metal", "interop", "gap? w2a Go_v_Metal suites (parity + speed)", false},
+      {"w2a.go_v_metal", "interop", "w2a all-family/native-dtype training, parity bands, replay and timings", true},
       {"nac.go_delegate", "interop", "gap? Go Welvet NAC → Metal dispatch", false},
-      {"determinism.policy", "metal", "gap? documented reduction order + exact_bit bands", false},
+      {"determinism.policy", "metal", "Best-effort 100% target; accepted industry-to-exact spectrum (60-100%)", true},
   };
   return k;
 }

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(welvet_metal VERSION 0.01 LANGUAGES CXX OBJCXX)
+project(welvet_metal VERSION 0.48 LANGUAGES CXX OBJCXX)
 
 # Apple-only Welvet engine: C++ host + Metal compute shaders.
 # macOS Apple silicon is the primary host; iOS device is a later artifact.
