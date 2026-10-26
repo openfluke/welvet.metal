@@ -725,3 +725,28 @@ VERSIONING.md                0.x formula
 5. Repeat until the engine board is 100 and the volume trains end-to-end on Metal.
 
 **Destination:** a complete standalone **3D volumetric** Welvet engine on Apple GPU — same model contract as Go Welvet — with resident state, native API, optional FFI/NAC, and w2a evidence for every ✅.
+
+
+## Release a macOS arm64 package
+
+```sh
+./release.sh --dry-run   # build, GPU-check and package locally; no git writes/publishing
+./release.sh             # commit local source changes, push branch/tag, publish GitHub release
+```
+
+The script checks that CMake, README and the runtime version agree (currently
+`0.68`, tagged `v0.68`). It builds shared/static libraries with a macOS 13 target,
+installs relocatable artifacts and headers, checks native Metal forward/backward/
+SGD, and writes the archive, SHA-256 checksum and generated release notes under
+ignored `dist/`. Deployment targeting is distinct from validation on older Macs.
+
+Publishing needs authenticated `gh` (`gh auth login`) and permission to push
+`origin`. The default stages and commits current non-ignored source changes;
+`--no-commit` instead requires a clean source tree. Existing tags are never
+moved and existing GitHub release assets are not overwritten.
+
+Use `./release.sh --plan` for a read-only overview, `--draft` for a draft GitHub
+release, or `--test-go` to additionally validate the staged dylib through sibling
+w2a/Go mount, native-dtype, mesh and ENTITY roundtrip tests. `--skip-build` reuses
+the isolated `build-release/` builds; `--skip-tests` is recorded in release notes.
+The default backend build/package has no Go or welvet.cpp dependency.
