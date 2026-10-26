@@ -1392,7 +1392,7 @@ bool write_mesh_tensor(const welvet::TensorF32& t) {
   return write_exact(&count,1)&&write_exact(t.data.data(),t.data.size());
 }
 }
-int run_mesh_generic_bp(int bench_iters, bool tween) {
+int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic) {
   using namespace welvet;
   int32_t depth,rows,cols,lpc,ticks,warmup,n_links;
   double lr;
@@ -1451,7 +1451,7 @@ int run_mesh_generic_bp(int bench_iters, bool tween) {
   const auto start=std::chrono::steady_clock::now();
   for(int i=0;i<(bench_iters>0?bench_iters:1);++i)if(auto st=once();!st){std::fprintf(stderr,"mesh BPTT: %s\n",st.message.c_str());return 1;}
   if(bench_iters>0){int64_t ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count();int32_t n=bench_iters;if(!write_magic("WVB1")||!write_exact(&ns,1)||!write_exact(&n,1))return 2;}
-  if(!write_magic(tween ? "MGWO" : "MGBO")||!write_exact(&loss,1)||!write_mesh_tensor(post)||!write_mesh_tensor(gin))return 2;
+  if(!write_magic(out_magic ? out_magic : (tween ? "MGWO" : "MGBO"))||!write_exact(&loss,1)||!write_mesh_tensor(post)||!write_mesh_tensor(gin))return 2;
   int32_t n=int(coords.size());if(!write_exact(&n,1))return 2;
   for(int i=0;i<n;++i){auto packed=grads[i];if(!packed.data.empty())packed.shape={int64_t(packed.data.size())};if(!write_mesh_tensor(packed))return 2;int32_t size=int(weights[i].size());if(!write_exact(&size,1)||!write_exact(weights[i].data(),weights[i].size()))return 2;}
   if(!write_exact(&ticks,1))return 2;

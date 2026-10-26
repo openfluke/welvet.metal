@@ -1598,6 +1598,8 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "STB1", 4) == 0) {
     return run_stepbp(bench_iters);
   }
+  // MeshTweenChain is the full-rate mesh FamilyBP path, with its own wire name.
+  if (std::memcmp(magic,"MGC1",4)==0) return run_mesh_generic_bp(bench_iters, false, "MGCO");
   if (std::memcmp(magic,"MGW1",4)==0) return run_mesh_generic_bp(bench_iters, true);
   if (std::memcmp(magic,"MGB1",4)==0) return run_mesh_generic_bp(bench_iters);
   if (std::memcmp(magic, "MBP1", 4) == 0) {
