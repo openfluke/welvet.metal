@@ -1,6 +1,8 @@
 #include "welvet/metal/training.hpp"
 #include "welvet/runtime/step.hpp"
 #include "welvet/systems/tween.hpp"
+#include "welvet/systems/tween_split.hpp"
+#include "welvet/systems/tween_alt.hpp"
 
 #include "welvet/runtime/backward.hpp"
 #include "welvet/runtime/forward.hpp"
@@ -311,7 +313,9 @@ Status apply_sgd(architecture::Grid& g, const std::vector<TensorF32>& layer_dws,
 }
 
 // Apply only the last captured clock tape; Tween does not traverse time.
-Status apply_tween(architecture::Grid& g, const State& s, const TensorF32& grad_out, double lr) {
+Status apply_credit(architecture::Grid& g, const State& s, const TensorF32& grad_out, double lr, Credit credit) {
+  if(int(credit)<1 || int(credit)>int(Credit::FamilyTweenSplitSparse))
+    return Status::Gap("step: unsupported local credit");
   if (s.history_in.empty() || s.history_pre.empty() ||
       s.history_in.back().size() != g.cells.size() ||
       s.history_pre.back().size() != g.cells.size() || s.layer_data.size() != g.cells.size())
@@ -325,8 +329,14 @@ Status apply_tween(architecture::Grid& g, const State& s, const TensorF32& grad_
     const auto& cin = inputs[size_t(idx)];
     if (cell.meta.is_disabled || cin.data.empty() || pres[size_t(idx)].data.empty() ||
         s.layer_data[size_t(idx)].data.empty()) continue;
-    if (auto rc = systems::tween::apply_cell_projected(cell,gap,cin,pres[size_t(idx)],
-                       s.layer_data[size_t(idx)],lr*0.5); !rc) return rc;
+    Status rc=Status::Ok();
+    const auto& pre=pres[size_t(idx)];const auto& post=s.layer_data[size_t(idx)];
+    if(credit==Credit::FamilyTweenSplit)rc=systems::tween_split::apply_cell_split(cell,gap,cin,pre,post,lr);
+    else if(credit==Credit::FamilyTweenAlt)rc=systems::tween_alt::apply_cell_alt(cell,gap,cin,pre,post,lr);
+    else if(credit==Credit::FamilyTweenSplitFastProxy)rc=systems::tween_split::apply_cell_variant(cell,gap,cin,pre,post,lr,systems::tween_split::Variant::FastProxy);
+    else if(credit==Credit::FamilyTweenSplitSparse)rc=systems::tween_split::apply_cell_variant(cell,gap,cin,pre,post,lr,systems::tween_split::Variant::Sparse);
+    else rc=systems::tween::apply_cell_projected(cell,gap,cin,pre,post,lr*0.5);
+    if(!rc)return rc;
     TensorF32 next;
     next.shape = cin.shape;
     next.data.assign(cin.data.size(),0.0f);
@@ -336,6 +346,8 @@ Status apply_tween(architecture::Grid& g, const State& s, const TensorF32& grad_
   return Status::Ok();
 }
 
+Status apply_tween(architecture::Grid& g,const State& s,const TensorF32& gy,double lr){return apply_credit(g,s,gy,lr,Credit::FamilyTween);}
+
 Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32& target, int ticks,
                  double lr, double* loss, Credit credit) {
   if (!loss) {
@@ -344,7 +356,7 @@ Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32&
   if (ticks <= 0) {
     return Status::Err(StatusCode::InvalidArgument, "step: ticks <= 0");
   }
-  if (credit != Credit::FamilyBP && credit != Credit::FamilyTween) {
+  if (int(credit)<0 || int(credit)>int(Credit::FamilyTweenSplitSparse)) {
     return Status::Gap(std::string("runtime.step Credit ") +
                        std::to_string(static_cast<int>(credit)) + " (unsupported mesh credit on Metal)");
   }
@@ -370,8 +382,8 @@ Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32&
     return s;
   }
 
-  if (credit == Credit::FamilyTween) {
-    return apply_tween(g, st, gy, lr);
+  if (credit != Credit::FamilyBP) {
+    return apply_credit(g, st, gy, lr,credit);
   }
   TensorF32 gin;
   std::vector<TensorF32> dws;

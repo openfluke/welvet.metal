@@ -25,6 +25,9 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 | Tween ModeTween | Metal block-average projection and local credit at lr×0.5; all 23 families / supported dtypes |
 | TweenChain ModeTweenChain | Metal full-lr chain-rule BP in leaves/volumes; all 23 families / supported dtypes |
 | Split / Alt and requested Step/Mesh variants | GPU 1/N scaling, refreshed global Alt phases, frozen Line per-hop credit, last-tick MeshTween and BPTT MeshTweenChain |
+| Proxy / cache / sparse (sections 14–19) | Metal head/linear credit, GPU norm/rescaling, cached/asynchronous proxies and sparse rotation; shared volume parity uses the 60–100% project spectrum |
+| Mesh Split / Alt / FastProxy / Sparse (20–23) | Final-tick local credit on Metal, 652 clock/shared-volume groups |
+| Line HeadProxy (24) | Frozen per-hop gap with Metal head backward and hidden projected credit |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging remain |
 | Mesh gradient joins | Metal accumulation kernel; Dense mesh-clock ×34, disabled-cell and remote-link checks |
 | KMeans / Parallel NormalBP | Metal soft assignments, all seven combines, reverse routing, gate gradients and native GPU SGD |
@@ -47,7 +50,23 @@ to each requested mode (250 new groups). The full combined runner passed
 538.583 seconds. StepBP has 134 groups; Tween, TweenChain, StepTween and
 StepTweenChain each have 130. Shared and static builds passed.
 
-**Precision policy:** exact tensor bits where required by each case; finite loss
+**Project parity target:** best-effort deterministic agreement with Go, aiming
+for 100% and accepting 60–100% on w2a's spectrum (`industry` through `exact_bit`).
+Long-horizon training need not reproduce an identical CPU trajectory. See
+[the README policy](../README.md#numerical-parity-target). The fixture gates
+below record existing evidence and may be stronger than that project target.
+
+**Sections 11–24 completed 2026-10-26:** 130 groups each for StepTweenSplit,
+TweenAlt and StepTweenAlt; six proxy leaf suites (65 each, plus 23 cache-refresh
+groups), 65 Line HeadProxy groups, six proxy volume suites (69 each, plus 23
+cache-refresh groups), and 652 mesh-clock/shared-volume groups. NormalBP,
+TweenSplit, Metal-only and 16 Line Alt pop controls also passed. Verification
+completed across the combined run and focused follow-up runs after the GDN
+fixture-policy correction and the accepted 60–100% proxy volume policy.
+Shared/static builds passed. Run `./scripts/macos_build_w2a.sh --training-11-24-all`
+to execute the complete batch.
+
+**Fixture precision policy:** exact tensor bits where required by each case; finite loss
 uses `abs(go-metal) <= 1e-12 * max(1, abs(go))`. NormalBP weight comparisons allow
 FP32 subnormal flushing only when both values are below the smallest normal
 FP32 value; normal values still require exact bits. MHA leaf ×34 retains its
@@ -508,7 +527,7 @@ specified; loss uses the finite float2 band above. GDN leaf weights require
 ≥strict, rather than exact bits. Volume weight subnormal flushing follows the
 existing Metal policy. KMeans and Parallel have independent ModeTween evidence above. No host numerical fallback is supplied.
 This sign-off is ModeTween only. TweenChain has its own sign-off below;
-Split/Alt and the requested Step/Mesh variants have separate sign-offs below; proxy/cache/sparse variants remain pending. Graph residency and performance tuning
+Split/Alt and the proxy/cache/sparse and Step/Mesh variants have separate sign-offs below. Graph residency and performance tuning
 remain open; benchmark timings include resetting the fixture.
 
 ## w2a Go↔Metal (TweenChain ModeTweenChain) — sign-off evidence
@@ -603,63 +622,63 @@ guards in 191.609 seconds. Shared/static builds passed.
 Run: `./scripts/macos_build_w2a.sh --steptweensplit-train`  
 Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-Wires: `STS1`/`STSO`; shared volume `TSP1` and per-kind Split variants. `TestGoVMetalStepTweenSplitTrain`: **80 case groups**.
+Wires: `STS1`/`STSO`; shared volume `TSP1` and per-kind Split variants. `TestGoVMetalStepTweenSplitTrain`: **130 case groups**.
 
 Line per-hop Split at full lr; N counts trainable leaves under that hop. The popped global gap stays frozen. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
 | Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| All supported leaf families | [x] | 23 families; 22 ×34 dtype sweeps, GDN Float32 only |
 | CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [x] | All 21 supported families |
-| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Volume 222 Float32 | [x] | All 23 supported families |
+| Volume 211 ×34 | [x] | All 22 dtype-generic families; shared parent volume credit for Line variants |
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. GDN loss retains its existing finite `1e-5` relative band, including multi-epoch cache-refresh tests; updated weights still require ≥strict. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel are verified: both KMeans outputs, seven Parallel combines, polymorphic branches, Filter state and shared volumes. The 16 Line Alt edge controls cover individual pipeline pops. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (TweenAlt ModeTweenAlt) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --tweenalt-train`  
 Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-Wires: `TAB1`/`TABO`; volume `TAV1` and per-kind Alt variants. `TestGoVMetalTweenAltTrain`: **80 case groups**.
+Wires: `TAB1`/`TABO`; volume `TAV1` and per-kind Alt variants. `TestGoVMetalTweenAltTrain`: **130 case groups**.
 
 Split at full lr, refresh prediction and gap, then Tween at lr×0.5. AltTimes=1 is validated. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
 | Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| All supported leaf families | [x] | 23 families; 22 ×34 dtype sweeps, GDN Float32 only |
 | CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [x] | All 21 supported families |
-| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Volume 222 Float32 | [x] | All 23 supported families |
+| Volume 211 ×34 | [x] | All 22 dtype-generic families; shared parent volume credit for Line variants |
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. GDN loss retains its existing finite `1e-5` relative band, including multi-epoch cache-refresh tests; updated weights still require ≥strict. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel are verified: both KMeans outputs, seven Parallel combines, polymorphic branches, Filter state and shared volumes. The 16 Line Alt edge controls cover individual pipeline pops. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenAlt ModeStepTweenAlt) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptweenalt-train`  
 Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
 
-Wires: `STA1`/`STAO`; shared volume `TAV1` and per-kind Alt variants. `TestGoVMetalStepTweenAltTrain`: **80 case groups**.
+Wires: `STA1`/`STAO`; shared volume `TAV1` and per-kind Alt variants. `TestGoVMetalStepTweenAltTrain`: **130 case groups**.
 
 Line per-hop Split→Tween at full/half lr with a frozen popped gap. Its shared volume path refreshes the gap between phases. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
 | Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| All supported leaf families | [x] | 23 families; 22 ×34 dtype sweeps, GDN Float32 only |
 | CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [x] | All 21 supported families |
-| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Volume 222 Float32 | [x] | All 23 supported families |
+| Volume 211 ×34 | [x] | All 22 dtype-generic families; shared parent volume credit for Line variants |
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. GDN loss retains its existing finite `1e-5` relative band, including multi-epoch cache-refresh tests; updated weights still require ≥strict. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel are verified: both KMeans outputs, seven Parallel combines, polymorphic branches, Filter state and shared volumes. The 16 Line Alt edge controls cover individual pipeline pops. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (MeshTween mesh-clock) — sign-off evidence
 
@@ -1288,14 +1307,14 @@ Ship: `runtime/line` Credit::FamilyTweenSplit on pop (`apply_split_child` 1/N @ 
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**Checkpoint:** All 23 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel are covered across native dtypes, nested/polymorphic branches, both outputs and seven combines.
 
 ---
 
@@ -1324,14 +1343,14 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. Default AltTimes=1.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**Checkpoint:** All 23 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel are covered across native dtypes, nested/polymorphic branches, both outputs and seven combines.
 
 ---
 
@@ -1360,15 +1379,22 @@ Ship: `runtime/line` Credit::FamilyTweenAlt on pop (`apply_alt_child` Split→Tw
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** All 23 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel are covered across native dtypes, nested/polymorphic branches, both outputs and seven combines.
+
+---
+
+## 14 — TweenSplitHeadProxy
+
+Head backward/SGD uses full lr; its input gradient is projected to hidden leaves with 1/(N−1) sharing. Dense hidden updates use GradWOnly.
+
+Wires: `GPB1`/`GPBO` (variant 1); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVMetalProxyTrain` and `TestGoVMetalProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1389,15 +1415,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Direct Go↔Metal parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed cache/async rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in Metal; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
+
+---
+
+## 15 — TweenSplitLinear
+
+Reverse linear-credit traversal updates each leaf at 1/N and propagates through the updated weights. Nested Stack, Residual and all Parallel combine routes retain their Go ordering.
+
+Wires: `GPB1`/`GPBO` (variant 2); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVMetalProxyTrain` and `TestGoVMetalProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1418,15 +1451,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Direct Go↔Metal parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed cache/async rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in Metal; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
+
+---
+
+## 16 — TweenSplitFastProxy
+
+Compute a linear head proxy before updating the head, then share it across hidden leaves at 1/(N−1). Dense local updates use GradWOnly.
+
+Wires: `GPB1`/`GPBO` (variant 3); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVMetalProxyTrain` and `TestGoVMetalProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1447,15 +1487,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Direct Go↔Metal parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed cache/async rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in Metal; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
+
+---
+
+## 17 — TweenSplitLinearCache
+
+Linear credit refreshes every 20 epochs. Intervening updates reuse cached projections rescaled by live/cached gap norms; GPU kernels compute norms and rescaling. The tests cross the refresh boundary with 22 epochs.
+
+Wires: `GPB1`/`GPBO` (variant 4); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVMetalProxyTrain` and `TestGoVMetalProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1476,15 +1523,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-**3D volumetric** = ModeTweenSplit / TweenSplit volume credit (`TSP1`/`TRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Direct Go↔Metal parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed cache/async rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in Metal; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
+
+---
+
+## 18 — TweenSplitHeadProxyAsync
+
+Apply the previous proxy to hidden leaves, update the head, then capture the next proxy through updated head weights. The first epoch uses the fresh proxy; four-epoch tests exercise stale reuse.
+
+Wires: `GPB1`/`GPBO` (variant 5); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVMetalProxyTrain` and `TestGoVMetalProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1505,15 +1559,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-**3D volumetric** = ModeTweenAlt / TweenAlt volume credit (`TAV1`/`TRA1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Direct Go↔Metal parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed cache/async rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in Metal; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
+
+---
+
+## 19 — TweenSplitSparse
+
+Update the head and one rotating hidden leaf per epoch, using the pre-update linear head proxy. Four-epoch tests exercise rotation and state reset.
+
+Wires: `GPB1`/`GPBO` (variant 6); `PGB1`/`PGVO` for actual-type volumes. Tests: `TestGoVMetalProxyTrain` and `TestGoVMetalProxyVolumeTrain`. The leaf matrix covers all 23 families and KMeans/Parallel variants; volume matrices cover 111/211 supported native dtypes and 222 Float32. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1534,15 +1595,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-**3D volumetric** = ModeTweenSplitFastProxy / TweenSplitFastProxy volume credit (`FPV1`/`FRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Direct Go↔Metal parity and repeated replay passed for all 23 families (34 native dtypes where supported; GDN Float32). Leaf fixtures retain their declared precision gates. Proxy volume loss, captured tensors and native weights require industry-or-better (60–100%) agreement, with actual deviations reported; observed cache/async rounding differences were strict (80%). Exact same-backend replay is checked separately. Numerical projection, credit, norms and SGD run in Metal; host code schedules work and stages tapes. Full graph residency and performance tuning remain open.
+
+---
+
+## 20 — MeshTweenSplit
+
+Mesh-clock Split applies full-lr 1/N local credit to each enabled cell using the final captured tick. The gap remains frozen and passes to earlier cells only when input lengths agree.
+
+Wires: `MGS1`/`MGSO`. `TestGoVMetalMeshSplitModes` covers 103 clock groups per mode plus shared volume groups: all 23 actual kinds, 111/211 supported native dtypes, 222 Float32, remote/recurrent links, both KMeans outputs, seven Parallel combines, zero-lr preservation and exact repeated replay.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1563,15 +1631,22 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
-**3D volumetric** = ModeTweenSplitSparse / TweenSplitSparse volume credit (`SPV1`/`SRP1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
+**Checkpoint:** Passed 2026-10-26: all 23 actual node kinds, supported native dtypes (GDN Float32), shared volumes and exact repeated replay. Mesh Split/Alt each have 154 groups; FastProxy/Sparse each have 172. All four passed together in 646.21s. Numerical work runs in Metal; graph residency and performance tuning remain open.
+
+---
+
+## 21 — MeshTweenAlt
+
+Mesh-clock Alt applies Split then half-lr Tween to the final captured local tape with the frozen popped gap. Shared volume Alt separately refreshes prediction/gap between phases.
+
+Wires: `MGA1`/`MGAO`. `TestGoVMetalMeshSplitModes` covers 103 clock groups per mode plus shared volume groups: all 23 actual kinds, 111/211 supported native dtypes, 222 Float32, remote/recurrent links, both KMeans outputs, seven Parallel combines, zero-lr preservation and exact repeated replay.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
@@ -1592,50 +1667,122 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**Checkpoint:** Passed 2026-10-26: all 23 actual node kinds, supported native dtypes (GDN Float32), shared volumes and exact repeated replay. Mesh Split/Alt each have 154 groups; FastProxy/Sparse each have 172. All four passed together in 646.21s. Numerical work runs in Metal; graph residency and performance tuning remain open.
+
+---
+
+## 22 — MeshTweenSplitFastProxy
+
+Mesh-clock FastProxy applies per-cell pre-update head proxy credit on the final captured tick. Shared volume FastProxy uses the global collected volume tape.
+
+Wires: `MGF1`/`MGFO`. `TestGoVMetalMeshSplitModes` covers 103 clock groups per mode plus shared volume groups: all 23 actual kinds, 111/211 supported native dtypes, 222 Float32, remote/recurrent links, both KMeans outputs, seven Parallel combines, zero-lr preservation and exact repeated replay.
+
+| Layer | Inside node | 3D volumetric | Fully signed off | Ver |
+|---|:---:|:---:|:---:|---|
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+
+**Checkpoint:** Passed 2026-10-26: all 23 actual node kinds, supported native dtypes (GDN Float32), shared volumes and exact repeated replay. Mesh Split/Alt each have 154 groups; FastProxy/Sparse each have 172. All four passed together in 646.21s. Numerical work runs in Metal; graph residency and performance tuning remain open.
+
+---
+
+## 23 — MeshTweenSplitSparse
+
+Mesh-clock Sparse updates the head and one hidden leaf per eligible local unit. Stack/Parallel nodes own rotation state; shared volume Sparse owns grid state.
+
+Wires: `MGQ1`/`MGQO`. `TestGoVMetalMeshSplitModes` covers 103 clock groups per mode plus shared volume groups: all 23 actual kinds, 111/211 supported native dtypes, 222 Float32, remote/recurrent links, both KMeans outputs, seven Parallel combines, zero-lr preservation and exact repeated replay.
+
+| Layer | Inside node | 3D volumetric | Fully signed off | Ver |
+|---|:---:|:---:|:---:|---|
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+
+**Checkpoint:** Passed 2026-10-26: all 23 actual node kinds, supported native dtypes (GDN Float32), shared volumes and exact repeated replay. Mesh Split/Alt each have 154 groups; FastProxy/Sparse each have 172. All four passed together in 646.21s. Numerical work runs in Metal; graph residency and performance tuning remain open.
 
 ---
 
 ## 24 — StepTweenSplitHeadProxy
 
-Needs Line + TweenSplitHeadProxy.  
-Ship: `runtime/line` `Credit::FamilyTweenSplitHeadProxy` on pop (`apply_head_proxy_child`); wire `STH1`/`STHO`; w2a `--steptweensplitheadproxy-train`.  
-**3D volumetric** = ModeTweenSplitHeadProxy / TweenSplitHeadProxy volume credit (`HPV1`/`HRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Line HeadProxy applies full-lr head backward/SGD on pop, then projects head input credit across hidden leaves. The popped global gap stays frozen. Shared volume coverage uses the section 14 HeadProxy path.
+
+Wire: `STH1`/`STHO`. `TestGoVMetalProxyTrain/StepTweenSplitHeadProxy` covers 65 leaf/Line groups, including native CNN2/3 and ConvT2/3. Section 14 supplies its shared volume evidence. GDN is Float32 only.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 23 families passed Line HeadProxy and shared volume parity, including supported dtype sweeps, pipeline warmup/pops and replay. Numerical training runs in Metal; host code schedules and stages tapes. Line variants 25–29 remain open.
 
 ---
 
@@ -1827,6 +1974,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
+| Unreleased — sections 11–24 | All 23 families signed off in StepTweenSplit, TweenAlt, StepTweenAlt, six proxy/cache/sparse modes, four mesh-clock modes and Line HeadProxy. Restored missing section headings 14–23. Direct native-dtype, stateful replay, cache-refresh and pipeline-pop evidence is in the combined `--training-11-24-all` runner; shared/static builds passed. |
 | Unreleased — TweenSplit section 10 | All 23 families: 131 groups, including 51 new KMeans/Parallel groups. Both output modes, seven combines, nested/polymorphic capture, Filter gate/state, weightless-leaf exclusion, native SGD and exact repeated leaf/volume replay. Combined TweenSplit/ModeTween/TweenAlt/Metal-only run passed in 191.609s; shared/static builds passed. |
 | Unreleased — MeshTweenChain section 9 | All 23 actual node kinds: 160 clock/shared-volume groups, supported dtypes, recurrent links, both KMeans outputs, seven Parallel combines, full-rate BPTT/SGD and exact replay. MeshBP equivalence checked directly for every family. Combined MeshTweenChain/MeshTween/ModeTweenChain/Metal-only run passed in 321.915s; shared/static builds passed. |
 | Unreleased — MeshTween section 8 | All 23 actual node kinds, both KMeans outputs and all Parallel combines: 159 clock/shared-volume groups; final-tick half-lr local credit, recurrent remote links, zero-lr native preservation and exact replay. MeshTween/MeshBP/ModeTween/Metal-only runner passed in 299.198s; shared/static builds passed. |

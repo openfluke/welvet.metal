@@ -68,6 +68,11 @@ Status forward_f32(const Layer &layer, const TensorF32 &input, TensorF32 *pre, T
 Status backward_f32(const Layer &layer, const TensorF32 &grad_out, const TensorF32 &input,
                     const TensorF32 &pre, TensorF32 *grad_in, TensorF32 *grad_w);
 
+// Proxy primitives: Wᵀgy without activation derivative, and promoted GradWOnly.
+Status linear_grad_in(const Layer& layer, const TensorF32& gy, const TensorF32& input, TensorF32* gx);
+Status grad_w_only(const Layer& layer, const TensorF32& gy, const TensorF32& input,
+                   const TensorF32& pre, TensorF32* dw);
+
 // Metal SGD in native FormatNone storage; invalidates the resident mirror after export.
 Status apply_grad_sgd(Layer *layer, const TensorF32 &dW, double lr);
 

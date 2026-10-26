@@ -323,6 +323,14 @@ Status collect_leaves(stack::Child& child, const TensorF32& input,
   return collect_projected(child, input, leaves, output);
 }
 
+Status apply_collected(stack::Child& child,const TensorF32& gy,const TensorF32& input,double lr) {
+ return apply_projected_parallel(child,gy,input,lr);
+}
+Status apply_collected(stack::Layer& ops,const TensorF32& gy,const TensorF32& input,double lr) {
+ stack::Child root;root.kind=stack::Kind::NestedStack;root.nested=std::move(ops.children);
+ auto st=apply_projected_parallel(root,gy,input,lr);ops.children=std::move(root.nested);return st;
+}
+
 Status project_gap(const TensorF32& src, const std::vector<int64_t>& dst_shape, TensorF32* out) {
   if (!out || dst_shape.empty() || src.data.empty())
     return Status::Err(StatusCode::InvalidArgument, "tween: empty projection");

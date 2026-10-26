@@ -55,9 +55,10 @@ native artifact and C ABI. There is no dependency from one backend to the other.
 - TweenSplit uses one collect tape and GPU projection/scaling by 1/N at full lr.
   TweenAlt refreshes prediction and gap between Split and Tween phases (AltTimes=1
   tested). StepTween/Split/Alt use frozen popped gaps; StepTweenChain uses true BP.
-  The other Split/Alt leaf/Line sections retain their separately listed groups,
-  including supported leaf and
-  volume dtypes across all 21 supported families (GDN Float32 only).
+  StepTweenSplit, TweenAlt and StepTweenAlt each cover 130 groups across all
+  23 families, including KMeans/Parallel, supported native dtypes and shared
+  volumes (GDN Float32 only). Alt uses ordinary Dense backward during its
+  Split phase; standalone Split uses GradWOnly, matching Go.
 - MeshTween uses captured last-tick local credit at half lr. Its production
   training entry point and generic clock wire share `step::apply_tween`.
   All 23 actual node kinds have 111/211 supported-dtype and 222 Float32 clock
@@ -72,13 +73,32 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   Its 160 groups include shared volumes and exact MeshBP equivalence across
   all 23 families. Checks include every captured tensor, oldest input gradient,
   accumulated parameter gradients, updated weights and exact benchmark replay.
-  Proxy/cache/sparse credit modes remain unsupported.
+- Sections 14–19 implement HeadProxy, Linear, FastProxy, LinearCache,
+  HeadProxyAsync and Sparse with Metal projection, local gradients and SGD.
+  Cache norm/rescaling stays on the GPU; 22-epoch tests cross the default
+  20-epoch refresh boundary. Async and Sparse tests exercise persistent proxy
+  and rotation state. All 23 families have native leaf and actual-type volume
+  parity; GDN is Float32 only.
+- MeshTweenSplit, MeshTweenAlt, MeshTweenSplitFastProxy and MeshTweenSplitSparse
+  apply final-tick local credit, preserving Go's frozen-gap routing. Each has
+  103 clock groups plus shared-volume coverage, supported native dtypes,
+  recurrent links, zero-lr preservation and exact repeated replay.
+- Line StepTweenSplitHeadProxy is supported through section 24. Its 65 groups
+  cover all families and supported native dtypes; shared volumes use HeadProxy.
+  Line variants 25–29 still return explicit unsupported-credit errors.
 - Float32 SGD encodes tiny steps in a scaled GPU representation so stored
   subnormals survive later phases that produce normal-range weights. Other
-  kernel subnormal limits remain as documented. GDN Alt refreshed loss uses
-  its finite relative 1e-5 band; GDN weights still require ≥strict.
+  kernel subnormal limits remain as documented. GDN loss uses
+  its existing finite relative 1e-5 band, including long cache-refresh fixtures; GDN weights still require ≥strict.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
   Promoted reductions and transcendentals use float2 before rounding to Float32.
+
+**Parity target:** best-effort agreement with Go, aiming for 100% and accepting
+60–100% on w2a's determinism spectrum (`industry` to `exact_bit`). Larger models
+and longer training runs need not follow bit-identical CPU trajectories. See
+[the README policy](../README.md#numerical-parity-target). The fixture gates
+below describe measured regression evidence, including stronger checks where
+practical; numerical parity and performance are separate measures.
 
 **Validated 2026-10-26:** all 19 NormalBP evidence sections / 219 case groups pass,
 including supported dtype loops, leaves, chains and volumes. Exact bits are
@@ -133,6 +153,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/macos_build_w2a.sh --tween-train
 ./scripts/macos_build_w2a.sh --tweenchain-train
 ./scripts/macos_build_w2a.sh --tween-next-all
+./scripts/macos_build_w2a.sh --training-11-24-all
 ./scripts/macos_build_w2a.sh --meshtween-train
 ./scripts/macos_build_w2a.sh --meshtweenchain-train
 ```
@@ -150,8 +171,19 @@ and nested local credit. The TweenChain runner executes
 `TestGoVMetalTweenChainTrain` (130 case groups with leaf/volume dtype sweeps) plus
 `TestGoVMetalOnly`, including hand-calculated chain-rule/full-rate checks.
 The `--tween-next-all` batch covers the eight requested Split/Alt/Step/Mesh sections
-(950 groups, including the expanded TweenSplit, StepTween/Chain and mesh suites) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
+(1100 groups, including the expanded TweenSplit, StepTween/Chain and mesh suites) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
 action flights, unsupported credit rejection and subnormal SGD storage.
+The `--training-11-24-all` runner covers sections 11–24 plus TweenSplit,
+NormalBP, GPU-only primitives and 16 Line Alt pop controls. Six proxy modes
+cover 65 leaf groups each (LinearCache adds 23 refresh-boundary groups), plus
+65 Line HeadProxy groups. Each proxy volume mode covers 69 groups (LinearCache
+adds 23 refresh-boundary groups). Generic volume/clock fixtures require exact
+replay across at least two measured iterations; leaf fixtures also replay from
+independently rebuilt state. Proxy volume comparisons accept the project
+industry-to-exact spectrum (60–100%) and report deviations; the observed cache/async
+weight differences reached strict (80%). Shapes and counts remain exact.
+GDN updated weights in leaf fixtures retain ≥strict; its loss uses its existing
+finite relative 1e-5 gate. Other regression fixture gates remain as declared above.
 The MeshTween runner covers its 159 groups plus MeshBP, ModeTween and Metal-only
 regressions. The MeshTweenChain runner covers its 160 groups plus MeshTween,
 ModeTweenChain and Metal-only regressions. Generic clock replay uses at least

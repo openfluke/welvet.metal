@@ -29,6 +29,10 @@ Status project_gap(const TensorF32& src, const std::vector<int64_t>& dst_shape, 
 Status apply_projected(stack::Child& c, const TensorF32& grad_out, const TensorF32& input,
                        double soft_lr);
 
+// Single collect walk, then updates; used by target-refreshed Alt.
+Status apply_collected(stack::Child& child,const TensorF32& gy,const TensorF32& input,double lr);
+Status apply_collected(stack::Layer& ops,const TensorF32& gy,const TensorF32& input,double lr);
+
 // Whole Stack: same global gap on every flattened child (Go applyProjectedTween(Stack)).
 Status apply_projected_ops(stack::Layer& ops, const TensorF32& grad_out, const TensorF32& input,
                            double soft_lr);

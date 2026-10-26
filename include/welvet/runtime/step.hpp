@@ -41,6 +41,8 @@ enum class Credit : int32_t {
   FamilyTweenSplitSparse = 5,
 };
 
+Status apply_credit(architecture::Grid& g,const State& state,const TensorF32& grad_out,double lr,Credit credit);
+
 Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32& target, int ticks,
                  double lr, double* loss, Credit credit = Credit::FamilyBP);
 

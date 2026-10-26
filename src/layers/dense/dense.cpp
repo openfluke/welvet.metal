@@ -4,6 +4,7 @@
 
 #include "welvet/activate.hpp"
 #include "welvet/metal/matvec.hpp"
+#include "welvet/metal/ops.hpp"
 
 #include <string>
 #include <vector>
@@ -189,6 +190,33 @@ Status backward_f32(const Layer &layer, const TensorF32 &grad_out, const TensorF
   *grad_w = TensorF32::zeros(out, in);
   return metal::resident_backward(&layer.gpu, grad_out.data.data(), input.data.data(),
                                   pre.data.data(), grad_in->data.data(), grad_w->data.data());
+}
+
+Status linear_grad_in(const Layer& layer, const TensorF32& gy, const TensorF32& input, TensorF32* gx) {
+  if (!gx || input.shape.size()!=2 || input.data.empty() || gy.data.empty())
+    return Status::Err(StatusCode::InvalidArgument,"dense: proxy input");
+  const int batch=int(input.shape[0]), in=layer.input_height, out=layer.output_height;
+  if(input.data.size()!=size_t(batch)*in)return Status::Err(StatusCode::InvalidArgument,"dense: proxy shape");
+  TensorF32 projected; projected.shape={batch,out};projected.data.resize(size_t(batch)*out);
+  if(auto st=metal::run("op_project_gap",{metal::read(gy.data),metal::write(projected.data)},
+      {int(gy.data.size()),int(projected.data.size())},{},projected.data.size());!st)return st;
+  if(auto st=ensure_resident(layer,batch);!st)return st;
+  TensorF32 pre=TensorF32::zeros(batch,out),dw=TensorF32::zeros(out,in);
+  *gx=TensorF32::zeros(batch,in);
+  return metal::resident_backward(&layer.gpu,projected.data.data(),input.data.data(),pre.data.data(),
+                                  gx->data.data(),dw.data.data(),true);
+}
+Status grad_w_only(const Layer& layer, const TensorF32& gy, const TensorF32& input,
+                   const TensorF32& pre, TensorF32* dw) {
+  if(!dw || input.shape.size()!=2 || gy.data.empty())return Status::Err(StatusCode::InvalidArgument,"dense: dw-only input");
+  const int batch=int(input.shape[0]), in=layer.input_height,out=layer.output_height;
+  if(batch<=0 || input.data.size()!=size_t(batch)*in)return Status::Err(StatusCode::InvalidArgument,"dense: dw-only shape");
+  TensorF32 projected;projected.shape={batch,out};projected.data.resize(size_t(batch)*out);
+  if(auto st=metal::run("op_project_gap",{metal::read(gy.data),metal::write(projected.data)},
+      {int(gy.data.size()),int(projected.data.size())},{},projected.data.size());!st)return st;
+  *dw=TensorF32::zeros(out,in);
+  return metal::run("op_proxy_dw",{metal::read(projected.data),metal::read(input.data),metal::read(pre.data),metal::write(dw->data)},
+      {batch,in,out,int(layer.activation),pre.data.size()>=size_t(batch)*out?1:0},{},dw->data.size());
 }
 
 Status apply_grad_sgd(Layer *layer, const TensorF32 &dW, double lr) {

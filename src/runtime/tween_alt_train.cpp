@@ -40,8 +40,11 @@ Status train_stack_mse(stack::Layer& ops, const TensorF32& input, const TensorF3
   const int times = alt_times < 1 ? 1 : alt_times;
   double last = 0.0;
   for (int i = 0; i < times; ++i) {
-    if (auto st = tween_split_train::train_stack_mse(ops,input,target,lr,&last); !st) return st;
     TensorF32 post, gy;
+    if(auto st=forward_stack(ops,input,&post);!st)return st;
+    if(auto st=training::mse(post,target,&last);!st)return st;
+    if(auto st=training::mse_grad(post,target,&gy);!st)return st;
+    if(auto st=systems::tween_split::apply_split(ops,gy,input,lr,true);!st)return st;
     if (auto st = forward_stack(ops, input, &post); !st) {
       return st;
     }
@@ -52,7 +55,7 @@ Status train_stack_mse(stack::Layer& ops, const TensorF32& input, const TensorF3
       return st;
     }
     const double soft_lr = lr * 0.5;
-    if (auto st = systems::tween::apply_projected_ops(ops, gy, input, soft_lr); !st) {
+    if (auto st = systems::tween::apply_collected(ops, gy, input, soft_lr); !st) {
       return Status::Err(st.code, std::string("tween_alt_train tween: ") + st.message);
     }
   }

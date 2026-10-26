@@ -33,7 +33,8 @@ namespace welvet::stack {
 // Go parallel.splitAccel — LinearCache / HeadProxyAsync / Sparse scratch.
 struct SplitAccel {
   std::vector<std::vector<float>> cache;
-  double cache_norm = 0.0;
+  double cache_norm = 0.0; // legacy metadata; numerical norm lives in GPU-produced norm_xy
+  std::vector<float> norm_xy;
   int tick = 0;
   int cache_every = 0; // 0 ⇒ default 20 (Go defaultLinearCacheEvery)
   std::vector<float> proxy; // HeadProxyAsync
@@ -82,6 +83,7 @@ struct ParallelNest {
 // Thin heterogeneous chain host (Go parallel.Stack subset — no CamSync / BranchModes).
 struct Child {
   Kind kind = Kind::None;
+  SplitAccel accel{};
   dense::Layer dense_op;
   rmsnorm::Layer rmsnorm_op;
   layernorm::Layer layernorm_op;

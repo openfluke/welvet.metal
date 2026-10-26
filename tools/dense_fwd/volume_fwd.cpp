@@ -8049,6 +8049,10 @@ int run_volume_kmeans_normalbp(int bench_iters, VolumeTrainMode mode) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
     }
+    if (mode == VolumeTrainMode::TweenAlt) {
+      bwd = {};
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss,1,&fwd);
+    }
     if (mode == VolumeTrainMode::TweenSplit) {
       bwd = {};
       return welvet::systems::tween_split::train_volume_mse(g, fwd, target, lr, &loss);
@@ -8101,11 +8105,11 @@ int run_volume_kmeans_normalbp(int bench_iters, VolumeTrainMode mode) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out(mode==VolumeTrainMode::TweenSplit?"KMSO":mode==VolumeTrainMode::Tween?"KMTO":mode==VolumeTrainMode::TweenChain?"KMCO":"KMVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(mode==VolumeTrainMode::TweenAlt?"KMAO":mode==VolumeTrainMode::TweenSplit?"KMSO":mode==VolumeTrainMode::Tween?"KMTO":mode==VolumeTrainMode::TweenChain?"KMCO":"KMVO", loss, bwd, fwd, Ws);
 }
 
 int run_volume_parallel_normalbp(int bench_iters, VolumeTrainMode mode) {
-  const char* short_hdr="PNV1";const char* out_magic=mode==VolumeTrainMode::TweenSplit?"PNSO":mode==VolumeTrainMode::Tween?"PNTO":mode==VolumeTrainMode::TweenChain?"PNCO":"PNVO";
+  const char* short_hdr="PNV1";const char* out_magic=mode==VolumeTrainMode::TweenAlt?"PNAO":mode==VolumeTrainMode::TweenSplit?"PNSO":mode==VolumeTrainMode::Tween?"PNTO":mode==VolumeTrainMode::TweenChain?"PNCO":"PNVO";
   int32_t depth = 0, rows = 0, cols = 0, lpc = 0, batch = 0, backend = 0, n_links = 0;
   if (!read_exact(&depth, 1) || !read_exact(&rows, 1) || !read_exact(&cols, 1) ||
       !read_exact(&lpc, 1) || !read_exact(&batch, 1) || !read_exact(&backend, 1) ||
@@ -8208,6 +8212,10 @@ int run_volume_parallel_normalbp(int bench_iters, VolumeTrainMode mode) {
     if (mode == VolumeTrainMode::Tween) {
       bwd = {};
       return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
+    }
+    if (mode == VolumeTrainMode::TweenAlt) {
+      bwd = {};
+      return welvet::systems::tween_alt::train_volume_mse(g,input,target,lr,&loss,1,&fwd);
     }
     if (mode == VolumeTrainMode::TweenSplit) {
       bwd = {};

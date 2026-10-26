@@ -1,12 +1,12 @@
 # welvet.metal — Welvet (3D volumetric AI engine) on Apple Metal
 
-**GPU-only enforcement (2026-10-25):** CPU-backed numerical paths have been
-retired. Supported compute is Dense forward/backward, Metal MSE/MSEGrad,
-Float32 FormatNone Metal SGD, and Metal mesh gradient accumulation.
-Sequential and NestedStack can schedule supported Dense children. Other layers
-return `Unsupported` until their Metal kernels exist. Historical parity results
-from host implementations do not establish GPU support. See
-[the current execution contract](docs/METAL_ONLY.md) before the roadmap below.
+**GPU-only enforcement:** supported numerical forward/backward and training
+paths run on Apple Metal. Host code handles scheduling, validation, allocation
+and storage staging. Current support and per-mode evidence live in
+[the execution contract](docs/METAL_ONLY.md) and
+[the training checklist](docs/TRAINING_CHECKLIST.md); use those documents for
+current sign-off rather than the early roadmap tables below. Historical host
+implementations do not establish GPU support.
 
 `welvet.metal` and `welvet.cpp` are **separate native backends** for Go Welvet.
 Neither backend is compiled into the other.
@@ -144,7 +144,27 @@ Same spirit as Go Welvet:
 5. **Train keeps storage truth** — updates preserve declared encoding (or unpack→update→re-pack with documented scratch).
 6. **One Go feature folder → one Metal runway row** (tick in this README).
 7. **v1.0.0 = engine board 100/100** on Metal. Apps/stubs/ANE are tracked but do not invent board points unless a gate is written first.
-8. **Determinism honesty** — prefer `exact_bit` vs Go; if Metal reductions cannot match, document the band **before** ✅.
+8. **Best-effort determinism** — aim for 100% (`exact_bit`) agreement with Go; the accepted project parity range is **60–100% on w2a's determinism spectrum**. Report the measured band and numerical deviations before ✅.
+
+### Numerical parity target
+
+Deterministic exactness against Go is **best effort, aiming for 100%, with an
+accepted range of 60–100%**. These percentages are w2a spectrum scores:
+`industry` = 60%, `strict` = 80%, and `exact_bit` = 100%. They are not model
+accuracy or the percentage of tensor elements allowed to be wrong.
+
+CPU and Metal GPU arithmetic can differ because of reduction order, rounding
+and parallel execution. Those differences can accumulate in larger models and
+longer training runs. Long-horizon training does not require bit-identical
+weights or trajectories against Go: target industry-band agreement or better,
+preserve the intended training semantics, and report the achieved band and
+deviations. Pursue exactness where practical without making long-horizon bit
+perfection a prerequisite for shipping.
+
+Small regression fixtures may retain stronger exact checks. Their documented
+gates record what has been verified; they do not impose universal exactness on
+every model or training duration. The engine completion scoreboard below is
+separate from this numerical parity spectrum.
 
 ---
 
@@ -582,6 +602,10 @@ Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ e
 ---
 
 ## Validation and performance (w2a)
+
+Apply the [best-effort numerical parity target](#numerical-parity-target): aim
+for 100%, accept the 60–100% spectrum range, and record actual error metrics and
+bands. Evaluate performance separately from numerical agreement.
 
 | Gate | Status |
 |---|:---:|

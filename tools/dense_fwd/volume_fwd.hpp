@@ -1,7 +1,7 @@
 #pragma once
 #include "welvet/runtime/line.hpp"
 
-enum class VolumeTrainMode { NormalBP, Tween, TweenChain, TweenSplit, TweenAlt };
+enum class VolumeTrainMode { NormalBP, Tween, TweenChain, TweenSplit, TweenAlt, ProxyHead, ProxyLinear, ProxyFast, ProxyCache, ProxyAsync, ProxySparse };
 
 // Volume mount-once forwards (Metal). Bench → WVB2 (mount_ns + exec_ns + iters) + WVFO.
 int run_volume_dense_fwd(int bench_iters);     // WVF1
@@ -121,4 +121,4 @@ int run_volume_parallel_normalbp(int, VolumeTrainMode mode = VolumeTrainMode::No
 
 int run_normalbp_child(int);
 
-int run_mesh_generic_bp(int bench_iters, bool tween = false, const char* out_magic = nullptr);
+int run_mesh_generic_bp(int bench_iters, bool tween = false, const char* out_magic = nullptr, int proxy_volume = 0, int mesh_family = 0);

@@ -1487,6 +1487,8 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic,"NBL1",4)==0)return run_normalbp_child(bench_iters);
   if (std::memcmp(magic,"KMB1",4)==0)return run_kmeans_normalbp(bench_iters);
+  if (std::memcmp(magic,"KMAL",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::TweenAlt);
+  if (std::memcmp(magic,"PNAL",4)==0)return run_volume_parallel_normalbp(bench_iters,VolumeTrainMode::TweenAlt);
   if (std::memcmp(magic,"KMSP",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic,"KMTV",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::Tween);
   if (std::memcmp(magic,"KMTC",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::TweenChain);
@@ -1545,6 +1547,15 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic,"GDTP",4)==0) return run_volume_gdn_normalbp(bench_iters,VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic,"SKTA",4)==0) return run_volume_stack_normalbp(bench_iters,VolumeTrainMode::TweenAlt);
   if (std::memcmp(magic,"SKTP",4)==0) return run_volume_stack_normalbp(bench_iters,VolumeTrainMode::TweenSplit);
+  if (std::memcmp(magic,"PGB1",4)==0) {
+    int32_t variant=0;if(!read_exact(&variant,1)||variant<1||variant>6)return 2;
+    return run_mesh_generic_bp(bench_iters,false,"PGVO",variant);
+  }
+  if (std::memcmp(magic,"GPB1",4)==0) {
+    int32_t variant=0;if(!read_exact(&variant,1)||variant<1||variant>6)return 2;
+    return run_tween_leaf(bench_iters,static_cast<VolumeTrainMode>(4+variant));
+  }
+  if (std::memcmp(magic,"STH1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitHeadProxy,"STHO");
   if (std::memcmp(magic,"TSB1",4)==0) return run_tween_leaf(bench_iters,VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic,"TAB1",4)==0) return run_tween_leaf(bench_iters,VolumeTrainMode::TweenAlt);
   if (std::memcmp(magic,"STW1",4)==0) return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTween,"STWO");
@@ -1601,6 +1612,10 @@ int main(int argc, char** argv) {
     return run_stepbp(bench_iters);
   }
   // MeshTweenChain is the full-rate mesh FamilyBP path, with its own wire name.
+  if (std::memcmp(magic,"MGS1",4)==0)return run_mesh_generic_bp(bench_iters,false,"MGSO",0,2);
+  if (std::memcmp(magic,"MGA1",4)==0)return run_mesh_generic_bp(bench_iters,false,"MGAO",0,3);
+  if (std::memcmp(magic,"MGF1",4)==0)return run_mesh_generic_bp(bench_iters,false,"MGFO",0,4);
+  if (std::memcmp(magic,"MGQ1",4)==0)return run_mesh_generic_bp(bench_iters,false,"MGQO",0,5);
   if (std::memcmp(magic,"MGC1",4)==0) return run_mesh_generic_bp(bench_iters, false, "MGCO");
   if (std::memcmp(magic,"MGW1",4)==0) return run_mesh_generic_bp(bench_iters, true);
   if (std::memcmp(magic,"MGB1",4)==0) return run_mesh_generic_bp(bench_iters);

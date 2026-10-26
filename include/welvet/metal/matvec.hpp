@@ -49,7 +49,7 @@ Status resident_execute(ResidentDense* r, const float* x, float* pre, float* pos
 // GPU NormalBP: act′ → MatVecT (soft-double W) → outer. Downloads grad_in + grad_w.
 // Requires resident mount (same W as forward). pre = post-bias pre-act from forward.
 Status resident_backward(ResidentDense* r, const float* grad_out, const float* input,
-                         const float* pre, float* grad_in, float* grad_w);
+                         const float* pre, float* grad_in, float* grad_w, bool linear = false);
 
 void resident_release(ResidentDense* r);
 

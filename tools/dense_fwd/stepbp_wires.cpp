@@ -12,6 +12,8 @@
 #include "welvet/runtime/tween_alt_train.hpp"
 #include "welvet/runtime/tween_chain_train.hpp"
 #include "welvet/runtime/step.hpp"
+#include "welvet/runtime/forward.hpp"
+#include "welvet/systems/tween_split.hpp"
 #include "welvet/stack.hpp"
 #include "welvet/parallel.hpp"
 #include "welvet/runtime/training.hpp"
@@ -891,10 +893,11 @@ int run_stepbp(int bench_iters, welvet::runtime::line::Credit credit, const char
 }
 
 int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
+  const bool proxy = int(mode)>=int(VolumeTrainMode::ProxyHead);
   const bool chain = mode == VolumeTrainMode::TweenChain;
-  const char* request = mode == VolumeTrainMode::TweenSplit ? "TSB1" :
+  const char* request = proxy ? "GPB1" : mode == VolumeTrainMode::TweenSplit ? "TSB1" :
                         mode == VolumeTrainMode::TweenAlt ? "TAB1" : chain ? "TCB1" : "TWB1";
-  const char* response = mode == VolumeTrainMode::TweenSplit ? "TSBO" :
+  const char* response = proxy ? "GPBO" : mode == VolumeTrainMode::TweenSplit ? "TSBO" :
                          mode == VolumeTrainMode::TweenAlt ? "TABO" : chain ? "TCBO" : "TWBO";
   int32_t n_children = 0, n_ticks = 0, batch = 0;
   double lr = 0.0;
@@ -931,9 +934,10 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
   std::vector<float> x(static_cast<std::size_t>(x_len));
   std::vector<float> tgt(static_cast<std::size_t>(t_len));
   if (!read_exact(x.data(), x.size()) || !read_exact(tgt.data(), tgt.size())) return 2;
+  std::vector<std::vector<float>> samples{ x }, targets{ tgt };
   for (int32_t t = 1; t < n_ticks; ++t) {
-    std::vector<float> skip(static_cast<std::size_t>(x_len + t_len));
-    if (!read_exact(skip.data(), skip.size())) return 2;
+    samples.emplace_back(x_len);targets.emplace_back(t_len);
+    if (!read_exact(samples.back().data(),samples.back().size()) || !read_exact(targets.back().data(),targets.back().size())) return 2;
   }
   (void)batch;
 
@@ -952,6 +956,12 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
     for (auto& child : stack.children) {
       if (!read_child(replay, &child))
         return welvet::Status::Err(welvet::StatusCode::Internal, "invalid Tween child replay");
+    }
+    if (proxy) {
+      auto variant=static_cast<welvet::systems::tween_split::Variant>(int(mode)-4);
+      for(int t=0;t<n_ticks;++t){xin.data=samples[t];target.data=targets[t];
+        if(auto st=welvet::systems::tween_split::train_stack_variant(stack,xin,target,lr,&loss,variant);!st)return st;}
+      return welvet::Status::Ok();
     }
     if (mode == VolumeTrainMode::TweenSplit)
       return welvet::runtime::tween_split_train::train_stack_mse(stack,xin,target,lr,&loss);
@@ -1392,7 +1402,7 @@ bool write_mesh_tensor(const welvet::TensorF32& t) {
   return write_exact(&count,1)&&write_exact(t.data.data(),t.data.size());
 }
 }
-int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic) {
+int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int proxy_volume, int mesh_family) {
   using namespace welvet;
   int32_t depth,rows,cols,lpc,ticks,warmup,n_links;
   double lr;
@@ -1430,16 +1440,31 @@ int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic) {
     runtime::step::ensure_size(&state,int(coords.size()));
     for(int t=0;t<warmup;++t){runtime::step::set_input(&state,input);if(auto st=runtime::step::forward(grid,&state,false);!st)return st;}
     for(int i=0;i<n_links;++i){auto* q=links.data()+8*i;if(auto st=architecture::set_remote_link(grid,q[0],q[1],q[2],q[3],q[4],q[5],q[6],q[7]);!st)return st;}
+    if(proxy_volume) {
+      gin={};grads.assign(coords.size(),{});
+      for(int t=0;t<ticks;++t){
+        runtime::forward::Result fwd;
+        if(auto st=runtime::forward::volume_dense(grid,input,&fwd);!st)return st;
+        state.history_in.emplace_back(coords.size());state.history_pre.emplace_back(coords.size());posts.emplace_back(coords.size());
+        for(const auto& node:fwd.steps){const auto& c=node.coord;size_t i=((c.z*rows+c.y)*cols+c.x)*lpc+c.l;
+          state.history_in.back()[i]=node.input;state.history_pre.back()[i]=node.pre;posts.back()[i]=node.post;}
+        post=fwd.output;
+        if(auto st=systems::tween_split::train_volume_variant(grid,fwd,target,lr,&loss,
+             static_cast<systems::tween_split::Variant>(proxy_volume));!st)return st;
+      }
+    } else {
     for(int t=0;t<ticks;++t){runtime::step::set_input(&state,input);if(auto st=runtime::step::forward(grid,&state,true);!st)return st;posts.push_back(state.layer_data);}
     post=state.layer_data.back();
     if(auto st=runtime::training::mse(post,target,&loss);!st)return st;
     TensorF32 gy;if(auto st=runtime::training::mse_grad(post,target,&gy);!st)return st;
-    if (tween) {
+    if (tween || mesh_family>0) {
       gin = {}; grads.assign(coords.size(), {});
-      if(auto st=runtime::step::apply_tween(grid,state,gy,lr);!st)return st;
+      auto credit=mesh_family>0?static_cast<runtime::step::Credit>(mesh_family):runtime::step::Credit::FamilyTween;
+      if(auto st=runtime::step::apply_credit(grid,state,gy,lr,credit);!st)return st;
     } else {
       if(auto st=runtime::step::backward(grid,&state,gy,&gin,&grads);!st)return st;
       if(auto st=runtime::step::apply_sgd(grid,grads,lr);!st)return st;
+    }
     }
     weights.resize(coords.size());
     for(size_t i=0;i<coords.size();++i)if(enabled[i]){

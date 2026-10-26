@@ -12,10 +12,10 @@ Status apply_alt_child(stack::Child& c, const TensorF32& grad_out, const TensorF
   const int times = alt_times < 1 ? 1 : alt_times;
   const double soft_lr = lr * 0.5;
   for (int i = 0; i < times; ++i) {
-    if (auto st = tween_split::apply_split_child(c, grad_out, input, lr); !st) {
+    if (auto st = tween_split::apply_split_child(c, grad_out, input, lr,true); !st) {
       return Status::Err(st.code, std::string("tween_alt split: ") + st.message);
     }
-    if (auto st = tween::apply_projected(c, grad_out, input, soft_lr); !st) {
+    if (auto st = tween::apply_collected(c, grad_out, input, soft_lr); !st) {
       return Status::Err(st.code, std::string("tween_alt tween: ") + st.message);
     }
   }
@@ -37,7 +37,7 @@ Status apply_cell_alt(architecture::Cell& cell, const TensorF32& grad_out, const
 }
 
 Status train_volume_mse(architecture::Grid& g, const TensorF32& input, const TensorF32& target,
-                        double lr, double* loss, int alt_times) {
+                        double lr, double* loss, int alt_times, runtime::forward::Result* last_fwd) {
   if (!loss) {
     return Status::Err(StatusCode::InvalidArgument, "tween_alt: nil loss");
   }
@@ -57,6 +57,7 @@ Status train_volume_mse(architecture::Grid& g, const TensorF32& input, const Ten
     if (auto st = tween::train_volume_mse(g, fwd, target, lr, &last); !st) {
       return Status::Err(st.code, std::string("tween_alt tween: ") + st.message);
     }
+    if(last_fwd)*last_fwd=fwd;
   }
   *loss = last;
   return Status::Ok();

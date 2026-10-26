@@ -66,6 +66,7 @@ enum class OpKind : int32_t {
 };
 
 struct Cell {
+  stack::SplitAccel accel{};
   LayerMeta meta{};
   OpKind op_kind = OpKind::None;
   dense::Layer dense_op;
@@ -97,6 +98,7 @@ struct Cell {
 };
 
 struct Grid {
+  stack::SplitAccel accel{};
   int depth = 1;
   int rows = 1;
   int cols = 1;

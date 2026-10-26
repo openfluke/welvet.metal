@@ -394,7 +394,7 @@ Status resident_execute(ResidentDense* r, const float* x, float* pre, float* pos
 }
 
 Status resident_backward(ResidentDense* r, const float* grad_out, const float* input,
-                         const float* pre, float* grad_in, float* grad_w) {
+                         const float* pre, float* grad_in, float* grad_w, bool linear) {
   if (!r || !r->buf_w || !grad_out || !input || !pre || !grad_in || !grad_w) {
     return Status::Err(StatusCode::InvalidArgument, "null resident backward");
   }
@@ -429,7 +429,7 @@ Status resident_backward(ResidentDense* r, const float* grad_out, const float* i
   uint32_t in_dim = static_cast<uint32_t>(r->cols);
   uint32_t out_dim = static_cast<uint32_t>(r->rows);
   uint32_t batch_u = static_cast<uint32_t>(r->batch);
-  int32_t act_i = static_cast<int32_t>(r->act);
+  int32_t act_i = static_cast<int32_t>(linear ? Activation::Linear : r->act);
 
   id<MTLCommandBuffer> cmd = [g_queue commandBuffer];
   id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
