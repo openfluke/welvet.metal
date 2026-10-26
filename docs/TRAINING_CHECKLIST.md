@@ -16,6 +16,40 @@ Host numerical training loops are forbidden. Host scheduling, validation, alloca
 
 Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 
+## w2a Go↔Metal (Freeze / Shadow / Adversarial / Memory / Cameral / CamSync) — sign-off evidence
+
+2026-10-26, working-tree milestone **0.68**. Native C++ APIs, Metal numerical
+kernels and w2a `CMB1`/`CMBO` bridge; no welvet.cpp dependency.
+
+| Scope | Inside node | Placed volume | Native dtype sweep | Evidence |
+|---|:---:|:---:|:---:|---|
+| Freeze / Shadow | ✅ | ✅ | ✅ | All 23 families; 111/211 placements; exact frozen credit and input-gradient guards |
+| Adversarial / Memory | ✅ | ✅ | ✅ | Branch ascent, sleep/wake gates; 111 native and 222 Float32 volumes |
+| Shadow teacher credit | ✅ | ✅ | ✅ | First teacher, GPU consistency gap, frozen teacher and independent scalar oracle |
+| Cameral BranchModes | ✅ | ✅ | ✅ | All enum choices; seven combines, rate scales, Stack child/nested overrides |
+| CamSync / BlendStores | ✅ | ✅ | ✅ | Groups, biases, cross/nested endpoints, no-store cases, all four sync boundaries |
+| Native replacement / coherence | ✅ | ✅ | ✅ | Fresh native encoding, primed forward probes, no-write byte preservation; Go cache regression |
+
+Training: **465 groups** in `TestGoVMetalCameralTrain`. Synchronization:
+**109 groups** in `TestGoVMetalCamSync`. The native sweep is 34 parameter dtypes
+except GDN Float32. Shape comparisons and same-Metal reset/replay are exact.
+These suites use documented combined absolute/relative industry-or-better
+numerical gates; existing regression gates remain unchanged. Full contracts,
+coverage boundaries and reference quirks are in [CAMERAL.md](CAMERAL.md).
+In particular, explicit cross links can write frozen endpoints, Metacognition
+can reset during forward, and GDN/Softmax have no blendable Go weights.Store.
+Placed-volume sign-off does not assert mixed actors for every mesh-clock credit.
+
+```sh
+./scripts/macos_build_w2a.sh --cameral-all
+```
+
+The full `--training-all` command includes these suites and the prior numbered
+mode regressions. Native tests stay in w2a, including scalar semantic guards
+and `TestGoStoreReplaceInvalidatesWires`.
+
+### Numerical execution inventory
+
 | Path | Execution today |
 |---|---|
 | NormalBP layers | Dense, RMSNorm, LayerNorm, SwiGLU, Softmax, Embedding, MHA, CNN1/2/3, ConvT1/2/3, RNN, LSTM, Sequential, Residual, KMeans, Mamba, Metacognition, GDN, Parallel and Stack use Metal numerical kernels |
@@ -2007,6 +2041,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
+| 0.68 — Cameral / CamSync | Freeze/Shadow/Adversarial/Memory, mixed branches, recursive Stack overrides and GPU store blending. 465 training and 109 sync groups, supported native dtypes, exact reset replay and independent semantic guards. Individual subgate version audit aligns accounting with the CPU sibling; unsupported model/quant/residency work stays open. |
 | Unreleased — sections 25–29 | Finished all five Line proxy variants using shared Metal credit, GPU norm/cache rescaling and native SGD. 352 new all-family/native-dtype groups, pipeline-pop controls and all-combine cache-refresh fixtures passed; shared/static builds and GPU-only guard passed. Shared volumes reuse sections 15–19. CPU↔GPU parity accepts the 60–100% project spectrum. Full runner: `--training-all`. |
 | Unreleased — sections 11–24 | All 23 families signed off in StepTweenSplit, TweenAlt, StepTweenAlt, six proxy/cache/sparse modes, four mesh-clock modes and Line HeadProxy. Restored missing section headings 14–23. Direct native-dtype, stateful replay, cache-refresh and pipeline-pop evidence is in the combined `--training-11-24-all` runner; shared/static builds passed. |
 | Unreleased — TweenSplit section 10 | All 23 families: 131 groups, including 51 new KMeans/Parallel groups. Both output modes, seven combines, nested/polymorphic capture, Filter gate/state, weightless-leaf exclusion, native SGD and exact repeated leaf/volume replay. Combined TweenSplit/ModeTween/TweenAlt/Metal-only run passed in 191.609s; shared/static builds passed. |

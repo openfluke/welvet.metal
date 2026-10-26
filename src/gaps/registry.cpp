@@ -132,9 +132,9 @@ const std::vector<Entry> &build() {
       {"runtime.mesh", "runtime",
        "All-family mesh BP/Chain BPTT and Tween/Split/Alt/FastProxy/Sparse local credit", true},
       {"train.modes.x29", "training", "All 29 numbered training modes; supported native dtypes; GDN Float32", true},
-      {"train.advanced", "training", "gap? Freeze/Shadow/Adversarial/Memory and Cameral BranchModes", false},
+      {"train.advanced", "training", "Metal Freeze/Shadow/Adversarial/Memory, mixed branches and Stack overrides (CMB1)", true},
       {"weights.quant.packed", "weights", "gap? 20 packed quant formats beyond FormatNone", false},
-      {"train.camsync", "training", "gap? CamSync / BlendStores Metal", false},
+      {"train.camsync", "training", "Metal CamSync/BlendStores, native repacking, groups/cross links and cache coherence (CMB1)", true},
 
       // --- Systems / model ---
       {"systems.tween", "systems", "ModeTween projected local credit on Metal", true},

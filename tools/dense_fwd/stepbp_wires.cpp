@@ -17,6 +17,8 @@
 #include "welvet/stack.hpp"
 #include "welvet/parallel.hpp"
 #include "welvet/runtime/training.hpp"
+#include "welvet/runtime/cameral_train.hpp"
+#include "welvet/cam_sync.hpp"
 #include "welvet/cnn1.hpp"
 #include "welvet/cnn2.hpp"
 #include "welvet/cnn3.hpp"
@@ -1338,12 +1340,13 @@ welvet::Status bind_mesh_child(welvet::architecture::Grid& grid, const welvet::a
   case stack::Kind::GDN: return architecture::bind_gdn(grid,c.z,c.y,c.x,c.l,std::move(child.gdn_op));
   case stack::Kind::KMeans: return architecture::bind_kmeans(grid,c.z,c.y,c.x,c.l,std::move(child.kmeans_op));
   case stack::Kind::NestedStack: {
-    stack::Layer layer; layer.children=std::move(child.nested);
+    stack::Layer layer; layer.children=std::move(child.nested);layer.controls=std::move(child.controls);layer.accel=std::move(child.accel);
     return architecture::bind_stack(grid,c.z,c.y,c.x,c.l,std::move(layer));
   }
   case stack::Kind::Parallel: {
     parallel::Layer layer; const auto& p=child.parallel_nest;
     layer.cfg={p.dim,p.out_feat,int(child.nested.size()),parallel::Combine(p.combine),p.seq_len,p.sparse_k,p.disagree_beta};
+    layer.controls=std::move(child.controls);layer.accel=std::move(child.accel);
     layer.branches=std::move(child.nested);
     if(p.has_gate)layer.gate=std::move(child.dense_op);
     return architecture::bind_parallel(grid,c.z,c.y,c.x,c.l,std::move(layer));
@@ -1376,10 +1379,11 @@ welvet::stack::Child take_mesh_child(welvet::architecture::Cell& cell) {
   case stack::Kind::Metacognition: child.metacognition_op=std::move(cell.metacognition_op);break;
   case stack::Kind::GDN: child.gdn_op=std::move(cell.gdn_op);break;
   case stack::Kind::KMeans: child.kmeans_op=std::move(cell.kmeans_op);break;
-  case stack::Kind::NestedStack:child.nested=std::move(cell.stack_op.children);break;
+  case stack::Kind::NestedStack:child.nested=std::move(cell.stack_op.children);child.controls=std::move(cell.stack_op.controls);child.accel=std::move(cell.stack_op.accel);break;
   case stack::Kind::Parallel: {
     const auto& p=cell.parallel_op.cfg;
     child.parallel_nest={int(p.combine),p.dim,p.out_feat,p.seq_len,p.sparse_k,p.disagree_beta,cell.parallel_op.gate?1:0};
+    child.controls=std::move(cell.parallel_op.controls);child.accel=std::move(cell.parallel_op.accel);
     child.nested=std::move(cell.parallel_op.branches);
     if(cell.parallel_op.gate)child.dense_op=std::move(*cell.parallel_op.gate);
     break;
@@ -1483,4 +1487,253 @@ int run_mesh_generic_bp(int bench_iters, bool tween, const char* out_magic, int 
   for(int t=0;t<ticks;++t)for(int i=0;i<n;++i)
     if(!write_mesh_tensor(state.history_in[t][i])||!write_mesh_tensor(state.history_pre[t][i])||!write_mesh_tensor(posts[t][i]))return 2;
   return 0;
+}
+
+namespace {
+bool read_cam_controls(ChildReader &r, welvet::cameral::Controls *c) {
+  int32_t n = 0;
+  if (!r.read(&n, 1) || n < 0 || n > 4096)
+    return false;
+  c->modes.resize(n);
+  for (auto &mode : c->modes) {
+    int32_t m;
+    if (!r.read(&m, 1) || m < 0 || m > 33)
+      return false;
+    mode = welvet::TrainMode(m);
+  }
+  if (!r.read(&n, 1) || n < 0 || n > 4096)
+    return false;
+  c->branch_lrs.resize(n);
+  if (!r.read(c->branch_lrs.data(), n))
+    return false;
+  if (!r.read(&c->shadow_coef, 1) || !r.read(&c->surprise_thresh, 1) ||
+      !r.read(&c->last_loss, 1))
+    return false;
+  int32_t present;
+  if (!r.read(&present, 1))
+    return false;
+  if (!present) {
+    c->sync.reset();
+    return true;
+  }
+  c->sync.emplace();
+  auto &cfg = *c->sync;
+  int32_t enabled, when;
+  if (!r.read(&enabled, 1) || !r.read(&cfg.alpha, 1) || !r.read(&when, 1) ||
+      when < 0 || when > 3)
+    return false;
+  cfg.enabled = enabled != 0;
+  cfg.when = welvet::cameral::SyncWhen(when);
+  if (!r.read(&n, 1) || n < 0 || n > 4096)
+    return false;
+  cfg.branch_alpha.resize(n);
+  if (!r.read(cfg.branch_alpha.data(), n))
+    return false;
+  if (!r.read(&n, 1) || n < 0 || n > 4096)
+    return false;
+  cfg.groups.resize(n);
+  for (auto &group : cfg.groups) {
+    int32_t count;
+    if (!r.read(&count, 1) || count < 0 || count > 4096)
+      return false;
+    group.resize(count);
+    if (!r.read(group.data(), count))
+      return false;
+  }
+  if (!r.read(&n, 1) || n < 0 || n > 4096)
+    return false;
+  cfg.cross.resize(n);
+  for (auto &pair : cfg.cross)
+    for (auto *e : {&pair.a, &pair.b})
+      if (!r.read(&e->stack_idx, 1) || !r.read(&e->branch, 1) ||
+          !r.read(&e->store, 1))
+        return false;
+  return true;
+}
+bool read_cam_tree(ChildReader &r, welvet::stack::Child *c) {
+  if (!read_cam_controls(r, &c->controls))
+    return false;
+  for (auto &ch : c->nested)
+    if (!read_cam_tree(r, &ch))
+      return false;
+  return true;
+}
+} // namespace
+int run_cameral(int bench_iters) {
+  using namespace welvet;
+  int32_t root_kind, mode, epochs, action, count, dims[4];
+  double lr;
+  if (!read_exact(&root_kind, 1) || !read_exact(&mode, 1) ||
+      !read_exact(&epochs, 1) || !read_exact(&action, 1) ||
+      !read_exact(&count, 1) || !read_exact(dims, 4) || !read_exact(&lr, 1))
+    return 2;
+  if (root_kind < 0 || root_kind > 2 || mode < 0 || mode > 33 || epochs < 1 ||
+      epochs > 4096 || count < 1 || count > 4096 || action < 0 || action > 6)
+    return 2;
+  ChildReader initial;
+  stack::Layer stack;
+  stack.children.resize(count);
+  for (auto &c : stack.children)
+    if (!read_child(initial, &c))
+      return 2;
+  if (!read_cam_controls(initial, &stack.controls))
+    return 2;
+  for (auto &c : stack.children)
+    if (!read_cam_tree(initial, &c))
+      return 2;
+  TensorF32 input, target;
+  if (!read_mesh_tensor(&input) || !read_mesh_tensor(&target))
+    return 2;
+  double loss = 0;
+  TensorF32 post;
+  std::vector<std::vector<float>> weights;
+  auto once = [&]() -> Status {
+    ChildReader replay(&initial.bytes);
+    stack = stack::Layer{};
+    stack.children.resize(count);
+    for (auto &c : stack.children)
+      if (!read_child(replay, &c))
+        return Status::Err(StatusCode::InvalidArgument, "cameral child replay");
+    if (!read_cam_controls(replay, &stack.controls))
+      return Status::Err(StatusCode::InvalidArgument, "cameral control replay");
+    for (auto &c : stack.children)
+      if (!read_cam_tree(replay, &c))
+        return Status::Err(StatusCode::InvalidArgument, "cameral tree replay");
+    if (stack.controls.sync)
+      cameral::set_sync(stack, *stack.controls.sync);
+    architecture::Grid grid;
+    parallel::Layer parallel;
+    if (root_kind == 1) {
+      if (count != 1 || stack.children[0].kind != stack::Kind::Parallel)
+        return Status::Err(StatusCode::InvalidArgument,
+                           "cameral Parallel root");
+      auto &c = stack.children[0];
+      auto p = c.parallel_nest;
+      parallel.cfg = {p.dim,
+                      p.out_feat,
+                      int(c.nested.size()),
+                      parallel::Combine(p.combine),
+                      p.seq_len,
+                      p.sparse_k,
+                      p.disagree_beta};
+      parallel.branches = std::move(c.nested);
+      parallel.controls = std::move(c.controls);
+      if (p.has_gate)
+        parallel.gate = std::move(c.dense_op);
+    }
+    if (root_kind == 2) {
+      if (dims[0] <= 0 || dims[1] <= 0 || dims[2] <= 0 || dims[3] <= 0 ||
+          int64_t(dims[0]) * dims[1] * dims[2] * dims[3] != count)
+        return Status::Err(StatusCode::InvalidArgument,
+                           "cameral grid dimensions");
+      grid = architecture::new_grid(dims[0], dims[1], dims[2], dims[3]);
+      for (int i = 0; i < count; ++i) {
+        auto coord = architecture::hop_order(grid)[i];
+        if (auto st =
+                bind_mesh_child(grid, coord, std::move(stack.children[i]));
+            !st)
+          return st;
+      }
+    }
+    auto forward = [&]() -> Status {
+      TensorF32 pre;
+      if (root_kind == 1)
+        return parallel::forward(parallel, input, &pre, &post);
+      if (root_kind == 2) {
+        runtime::forward::Result fwd;
+        auto st = runtime::forward::volume_dense(grid, input, &fwd);
+        post = std::move(fwd.output);
+        return st;
+      }
+      return stack::forward(stack, input, &pre, &post);
+    };
+    auto sync = [&](int what) -> Status {
+      if (root_kind == 2)
+        return Status::Gap("cameral grid manual sync uses cell Stack policies");
+      if (root_kind == 1) {
+        if (what == 1)
+          return cameral::sync_now(parallel);
+        return cameral::maybe_sync(
+            parallel, what == 2   ? cameral::SyncWhen::AfterPulse
+                      : what == 3 ? cameral::SyncWhen::AfterStep
+                                  : cameral::SyncWhen::AfterSample);
+      }
+      if (what == 1)
+        return cameral::sync_now(stack);
+      return cameral::maybe_sync(stack,
+                                 what == 2   ? cameral::SyncWhen::AfterPulse
+                                 : what == 3 ? cameral::SyncWhen::AfterStep
+                                             : cameral::SyncWhen::AfterSample);
+    };
+    loss = 0;
+    // Prime resident mirrors before manual sync; the final forward detects
+    // stale caches.
+    if (action >= 1 && action <= 4)
+      if (auto st = forward(); !st)
+        return st;
+    for (int epoch = 0; epoch < epochs; ++epoch) {
+      if (action >= 1 && action <= 4) {
+        if (auto st = sync(action); !st)
+          return st;
+        continue;
+      }
+      Status st;
+      if (root_kind == 0)
+        st = runtime::cameral_train::train_stack_mse(
+            stack, input, target, TrainMode(mode), lr, &loss);
+      else if (root_kind == 1)
+        st = runtime::cameral_train::train_mse(parallel, input, target,
+                                               TrainMode(mode), lr, &loss);
+      else
+        st = runtime::cameral_train::train_volume_mse(
+            grid, input, target, TrainMode(mode), lr, &loss);
+      if (!st)
+        return st;
+      if (action >= 5)
+        if (auto extra = sync(action == 5 ? 1 : 2); !extra)
+          return extra;
+    }
+    if (auto st = forward(); !st)
+      return st;
+    if (root_kind == 1) {
+      auto &c = stack.children[0];
+      c.nested = std::move(parallel.branches);
+      c.controls = std::move(parallel.controls);
+      if (parallel.gate)
+        c.dense_op = std::move(*parallel.gate);
+    }
+    if (root_kind == 2)
+      for (int i = 0; i < count; ++i)
+        stack.children[i] = take_mesh_child(grid.cells[i]);
+    weights.clear();
+    for (auto &c : stack.children) {
+      weights.emplace_back(stack::child_grad_w_size(c));
+      if (!weights.back().empty())
+        if (auto st = stack::child_export_f32(c, weights.back().data()); !st)
+          return st;
+    }
+    return Status::Ok();
+  };
+  auto begin = std::chrono::steady_clock::now();
+  for (int i = 0; i < (bench_iters > 0 ? bench_iters : 1); ++i)
+    if (auto st = once(); !st) {
+      std::fprintf(stderr, "cameral: %s\n", st.message.c_str());
+      return 1;
+    }
+  if (bench_iters > 0) {
+    int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                     std::chrono::steady_clock::now() - begin)
+                     .count();
+    int32_t n = bench_iters;
+    if (!write_magic("WVB1") || !write_exact(&ns, 1) || !write_exact(&n, 1))
+      return 2;
+  }
+  if (!write_magic("CMBO") || !write_exact(&loss, 1) || !write_exact(&count, 1))
+    return 2;
+  for (auto &w : weights) {
+    int32_t n = int(w.size());
+    if (!write_exact(&n, 1) || !write_exact(w.data(), w.size()))
+      return 2;
+  }
+  return write_mesh_tensor(post) ? 0 : 2;
 }

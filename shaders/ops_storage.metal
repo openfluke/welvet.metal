@@ -966,3 +966,179 @@ kernel void op_bias_sgd(OP_ARGS) {
   Raw out = {raw, c[0] * 8};
   put_u64(out, tid * 8, pack_sd(value));
 }
+
+// Complete FormatNone re-encoding after a GPU blend (Go Store.SetFromF32).
+// Unlike SGD's fixed scale, a complete store replacement recomputes its scale.
+inline float cam_div(float x, float y) {
+  return sd_to_float(sd_div(float2(x, 0), float2(y, 0)));
+}
+inline float cam_mul(float x, float y) {
+  return sd_to_float(sd_mul(float2(x, 0), float2(y, 0)));
+}
+kernel void op_native_repack(OP_ARGS) {
+  if (tid)
+    return;
+  using namespace native_gpu;
+  int dt = c[0], n = c[1], bytes = c[2];
+  Raw raw = {(device uchar *)b, bytes};
+  for (int k = 0; k < bytes; ++k)
+    raw[k] = 0;
+  float hi = 0, mn = a[0], mx = a[0];
+  for (int i = 0; i < n; ++i) {
+    hi = max(hi, abs(a[i]));
+    mn = min(mn, a[i]);
+    mx = max(mx, a[i]);
+  }
+  float base = hi == 0 ? 1 : hi, span = mx - mn;
+  if (span == 0)
+    span = 1;
+  float scale = 1;
+  bool uns = dt == 10 || dt == 11 || dt == 12 || dt == 13 || dt == 15 ||
+             dt == 18 || dt == 22 || dt == 23 || dt == 29 || dt == 31 ||
+             dt == 33;
+  if (dt == 6 || dt == 21)
+    scale = cam_div(base, 1e6f);
+  if (dt == 7)
+    scale = cam_div(base, 2147483647.0f);
+  if (dt == 8)
+    scale = cam_div(base, 32767.0f);
+  if (dt == 9) {
+    scale = cam_div(hi, 127.0f);
+    if (scale == 0)
+      scale = 1;
+  }
+  if (dt == 14) {
+    scale = cam_div(hi, 7.0f);
+    if (scale == 0)
+      scale = 1;
+  }
+  if (dt == 17 || dt == 19 || dt == 20 || dt == 26)
+    scale = base;
+  if (dt == 27 || dt == 28 || dt == 30 || dt == 32) {
+    int bits = dt == 30 ? 5 : dt == 32 ? 3 : 6;
+    scale = cam_div(hi, float((1 << (bits - 1)) - 1));
+    if (scale == 0)
+      scale = 1;
+  }
+  float maxu = 1;
+  if (uns) {
+    maxu = (dt == 10 || dt == 22 || dt == 23) ? 1e15f
+           : dt == 11                         ? 4294967295.0f
+           : dt == 12                         ? 65535.0f
+           : dt == 13                         ? 255.0f
+           : dt == 15                         ? 15.0f
+           : dt == 18                         ? 3.0f
+                                              : float((1 << (dt == 29   ? 6
+                                                             : dt == 31 ? 5
+                                                                        : 3)) -
+                              1);
+    scale = cam_div(span, maxu);
+    put_u32(raw, 0, as_type<uint>(mn));
+  }
+  d[0] = scale;
+  d[1] = 0;
+  WeightStore store = {DType(dt), raw, scale};
+  for (int i = 0; i < n; ++i) {
+    float v = a[i];
+    if (dt == 1) {
+      ((device float *)b)[i] = v;
+      continue;
+    }
+    if (dt == 0) {
+      put_u64(raw, i * 8, pack_float(v));
+      continue;
+    }
+    if (dt == 6 || dt == 21) {
+      long q = long(round(cam_mul(cam_div(v, base), 1e6f)));
+      put_u64(raw, i * 8, ulong(q));
+      continue;
+    }
+    if (dt == 7) {
+      long q = clamp(long(round(cam_mul(cam_div(v, base), 2147483647.0f))),
+                     -2147483648l, 2147483647l);
+      put_u32(raw, i * 4, uint(q));
+      continue;
+    }
+    if (dt == 8) {
+      long q = long(round(cam_mul(cam_div(v, base), 32767.0f)));
+      put_u16(raw, i * 2, ushort(q));
+      continue;
+    }
+    if (dt == 9) {
+      long q = clamp(long(round(cam_div(v, scale))), -128l, 127l);
+      raw[i] = uchar(q);
+      continue;
+    }
+    if (uns) {
+      float qf = round(cam_mul(cam_div(v - mn, span), maxu));
+      ulong q = ulong(max(0.0f, qf));
+      if (dt == 11)
+        q = min(q, 4294967295ul);
+      if (dt == 10 || dt == 22 || dt == 23)
+        put_u64(raw, 4 + i * 8, q);
+      else if (dt == 11)
+        put_u32(raw, 4 + i * 4, uint(q));
+      else if (dt == 12)
+        put_u16(raw, 4 + i * 2, ushort(q));
+      else if (dt == 13)
+        raw[4 + i] = uchar(q);
+      else if (dt == 15)
+        put_nibble(raw.ptr + 4, i, uchar(q));
+      else if (dt == 18)
+        put_2bit(raw.ptr + 4, i, uchar(q));
+      else {
+        int bits = dt == 29 ? 6 : dt == 31 ? 5 : 3;
+        for (int bit = 0; bit < bits; ++bit) {
+          int pos = i * bits + bit;
+          if (q & (1ul << bit))
+            raw[4 + pos / 8] |= uchar(1u << (pos % 8));
+        }
+      }
+      continue;
+    }
+    if (dt == 14) {
+      int q = clamp(int(round(cam_div(v, scale))), -8, 7);
+      put_nibble(raw.ptr, i, uchar(q & 15));
+      continue;
+    }
+    if (dt == 17) {
+      int q = clamp(int(round(cam_div(v, scale))), -2, 1);
+      put_2bit(raw.ptr, i, uchar((q + 2) & 3));
+      continue;
+    }
+    if (dt == 19) {
+      float norm = cam_div(v, scale);
+      put_2bit(raw.ptr, i, norm > .5f ? 2 : norm < -.5f ? 0 : 1);
+      continue;
+    }
+    if (dt == 26) {
+      float norm = cam_div(v, scale), err = FLT_MAX;
+      int best = 0;
+      for (int code = 0; code < 16; ++code) {
+        float delta = abs(norm - kNf4[code]);
+        if (delta < err) {
+          err = delta;
+          best = code;
+        }
+      }
+      put_nibble(raw.ptr, i, uchar(best));
+      continue;
+    }
+    if (dt == 27 || dt == 28 || dt == 30 || dt == 32) {
+      int bits = dt == 30 ? 5 : dt == 32 ? 3 : 6;
+      int q = clamp(int(round(cam_div(v, scale))), -(1 << (bits - 1)),
+                    (1 << (bits - 1)) - 1);
+      uint code = uint(q) & ((1u << bits) - 1);
+      for (int bit = 0; bit < bits; ++bit) {
+        int pos = i * bits + bit;
+        if (code & (1u << bit))
+          raw[pos / 8] |= uchar(1u << (pos % 8));
+      }
+      continue;
+    }
+    if (!set_weight_at(store, i, n, v)) {
+      d[1] = 1;
+      return;
+    }
+  }
+}

@@ -128,6 +128,81 @@ const dense::Layer* dense_branch(const Layer& layer, int i) {
              ? &layer.branches[i].dense_op : nullptr;
 }
 
+TrainMode effective_branch_mode(const Layer &l, int i, TrainMode parent) {
+  return resolve_train_mode(i >= 0 && i < int(l.controls.modes.size())
+                                ? l.controls.modes[i]
+                                : TrainMode::Inherit,
+                            parent);
+}
+bool has_mixed_branch_modes(const Layer &l) {
+  for (auto mode : l.controls.modes)
+    if (mode != TrainMode::Inherit)
+      return true;
+  return false;
+}
+Status approx_gate_grad(const Layer &l, const TensorF32 &gy,
+                        TensorF32 *result) {
+  if (!result || gy.data.empty() || gy.shape.empty())
+    return Status::Err(StatusCode::InvalidArgument, "cameral gate gap shape");
+  result->shape = {gy.shape[0], int64_t(l.branches.size())};
+  result->data.resize(size_t(result->shape[0]) * l.branches.size());
+  double rate = 0.1;
+  uint64_t bits;
+  std::memcpy(&bits, &rate, 8);
+  return metal::run("op_cam_gate_gap",
+                    {metal::read(gy.data), metal::write(result->data)},
+                    {int(gy.data.size()), int(result->data.size()),
+                     int(uint32_t(bits)), int(uint32_t(bits >> 32))},
+                    {}, result->data.size());
+}
+Status split_combine_grad(const Layer &l, const TensorF32 &gy,
+                          const std::vector<TensorF32> &posts,
+                          std::vector<TensorF32> *result) {
+  const int nb = int(posts.size());
+  if (!result || nb == 0 || gy.data.empty() || gy.shape.empty())
+    return Status::Err(StatusCode::InvalidArgument, "cameral combine gap");
+  const int mode =
+      l.cfg.combine == Combine::Filter ? int(Combine::Add) : int(l.cfg.combine);
+  if (mode == 0 && gy.shape.size() < 2)
+    return Status::Err(StatusCode::InvalidArgument, "cameral concat rank");
+  const int rows = mode == 0 ? int(gy.shape[0]) : 1,
+            out = mode == 0 ? int(gy.shape[1]) : int(gy.data.size());
+  std::vector<int32_t> widths;
+  std::vector<float> packed;
+  for (auto &p : posts) {
+    int width = mode == 0 ? int(p.shape.back()) : out;
+    if (p.data.size() < size_t(rows * width))
+      return Status::Err(StatusCode::InvalidArgument, "cameral branch width");
+    widths.push_back(width);
+    packed.insert(packed.end(), p.data.begin(), p.data.begin() + rows * width);
+  }
+  std::vector<float> forward(rows * out), grads(packed.size()), scratch(4 * nb),
+      none;
+  uint64_t bits;
+  double beta = disagree_beta_eff(l.cfg);
+  std::memcpy(&bits, &beta, 8);
+  if (auto st = metal::run("op_parallel",
+                           {metal::read(packed), metal::read(widths),
+                            metal::read(none), metal::read(gy.data),
+                            metal::write(forward), metal::write(grads),
+                            metal::write(none), metal::write(scratch)},
+                           {rows, nb, out, mode, sparse_k_eff(l.cfg), 1,
+                            int(uint32_t(bits)), int(uint32_t(bits >> 32))});
+      !st)
+    return st;
+  result->clear();
+  size_t off = 0;
+  for (int i = 0; i < nb; ++i) {
+    TensorF32 g;
+    g.shape = mode == 0 ? std::vector<int64_t>{rows, widths[i]} : gy.shape;
+    size_t count = rows * widths[i];
+    g.data.assign(grads.begin() + off, grads.begin() + off + count);
+    off += count;
+    result->push_back(std::move(g));
+  }
+  return Status::Ok();
+}
+
 namespace {
 Status execute(Layer& layer, const TensorF32& input, const TensorF32* grad_out,
                TensorF32* pre, TensorF32* post, TensorF32* grad_in, TensorF32* grad_w) {

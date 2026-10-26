@@ -1555,6 +1555,7 @@ int main(int argc, char** argv) {
     int32_t variant=0;if(!read_exact(&variant,1)||variant<1||variant>6)return 2;
     return run_tween_leaf(bench_iters,static_cast<VolumeTrainMode>(4+variant));
   }
+  if (std::memcmp(magic,"CMB1",4)==0)return run_cameral(bench_iters);
   if (std::memcmp(magic,"STH1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitHeadProxy,"STHO");
   if (std::memcmp(magic,"STL1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitLinear,"STLO");
   if (std::memcmp(magic,"STF1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitFastProxy,"STFO");

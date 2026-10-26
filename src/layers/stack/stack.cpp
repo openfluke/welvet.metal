@@ -12,9 +12,13 @@ template<class F> Status with_parallel(Child& child, F fn) {
   const auto& cfg = child.parallel_nest;
   layer.cfg = {cfg.dim, cfg.out_feat, int(child.nested.size()), parallel::Combine(cfg.combine),
                cfg.seq_len, cfg.sparse_k, cfg.disagree_beta};
+  layer.controls = std::move(child.controls);
+  layer.accel = std::move(child.accel);
   layer.branches = std::move(child.nested);
   if (cfg.has_gate) layer.gate = std::move(child.dense_op);
   const auto st = fn(layer);
+  child.controls = std::move(layer.controls);
+  child.accel = std::move(layer.accel);
   child.nested = std::move(layer.branches);
   if (cfg.has_gate) child.dense_op = std::move(*layer.gate);
   return st;

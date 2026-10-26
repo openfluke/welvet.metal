@@ -6,6 +6,12 @@ native artifact and C ABI. There is no dependency from one backend to the other.
 
 ## Supported computation
 
+- Freeze/Shadow, BP-gated Adversarial/Memory, mixed Parallel credit and Stack
+  overrides use the Metal backward/update/consistency kernels. CamSync computes
+  means, blends weights/biases and replaces native storage on the GPU, including
+  cache invalidation. Full behavior, placement limits, precision gates and w2a
+  evidence are documented in [CAMERAL.md](CAMERAL.md). Host orchestration and
+  staging remain; persistent graph residency is a separate unfinished gate.
 - Dense forward and backward: Metal soft-double GEMV, activation, derivative,
   transpose GEMV, and outer-product kernels. All 34 FormatNone dtypes can be
   decoded at the storage boundary for these operations.

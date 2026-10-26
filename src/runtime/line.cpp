@@ -1,6 +1,7 @@
 #include "welvet/runtime/line.hpp"
 
 #include "welvet/runtime/training.hpp"
+#include "welvet/runtime/cameral_train.hpp"
 #include "welvet/systems/tween.hpp"
 #include "welvet/systems/tween_split.hpp"
 #include "welvet/systems/tween_alt.hpp"
@@ -123,7 +124,14 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
       TensorF32 next;
       Status credit_status;
       if (credit == Credit::FamilyBP) {
-        credit_status = stack::child_family_bp(child,g,input,pre,lr,&next);
+        // The cameral walker preserves frozen/mixed branches and returns the
+        // true input gradient; ordinary leaves retain their existing BP path.
+        if (child.kind == stack::Kind::Parallel || child.kind == stack::Kind::NestedStack)
+          credit_status = runtime::cameral_train::train_child(
+              child, g, input, pre, fl.posts[static_cast<std::size_t>(j)],
+              TrainMode::StepBP, lr, &next);
+        else
+          credit_status = stack::child_family_bp(child,g,input,pre,lr,&next);
       } else {
         if (credit == Credit::FamilyTween)
           credit_status = systems::tween::apply_projected(child,g,input,lr*0.5);

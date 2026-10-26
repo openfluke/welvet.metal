@@ -122,3 +122,5 @@ int run_volume_parallel_normalbp(int, VolumeTrainMode mode = VolumeTrainMode::No
 int run_normalbp_child(int);
 
 int run_mesh_generic_bp(int bench_iters, bool tween = false, const char* out_magic = nullptr, int proxy_volume = 0, int mesh_family = 0);
+
+int run_cameral(int bench_iters); // CMB1 -> CMBO

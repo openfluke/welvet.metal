@@ -43,6 +43,9 @@ struct WeightStore {
   // Metal SGD plus native storage encoding for all FormatNone dtypes.
   Status apply_sgd(const double *dW, double lr);
 
+  // Re-encode a complete store after GPU blending, including fresh native scale.
+  Status set_from_f32_gpu(const std::vector<float>&);
+
   // Metal float64 bias SGD via explicit software precision; empty bias is a no-op.
   Status apply_bias_sgd(const double *dB, int n, double lr);
 };

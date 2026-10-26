@@ -45,9 +45,16 @@ using BranchKind = stack::Kind;
 // Branch scheduling on the host; all numerical work executes on Metal.
 struct Layer {
   Config cfg{};
+  cameral::Controls controls{};
+  stack::SplitAccel accel{};
   std::vector<Branch> branches;
   std::optional<dense::Layer> gate; // filter only
 };
+
+TrainMode effective_branch_mode(const Layer&,int,TrainMode);
+bool has_mixed_branch_modes(const Layer&);
+Status split_combine_grad(const Layer&,const TensorF32&,const std::vector<TensorF32>&,std::vector<TensorF32>*);
+Status approx_gate_grad(const Layer&,const TensorF32&,TensorF32*);
 
 // packed: Branches×[OutFeat×Dim] then optional Gate [Branches×Dim] for Filter.
 Status new_configured(const Config& cfg, DType dt, const float* packed_or_null, Layer* out);

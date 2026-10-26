@@ -96,6 +96,11 @@ Status forward(Layer &layer, const TensorF32 &input, TensorF32 *pre, TensorF32 *
     return st;
   *pre = input;
   *post = input;
+  // Go reshapeOut squeezes a singleton sequence, including [B,1,D].
+  if (lay.seq == 1) {
+    pre->shape = {lay.batch, dim};
+    post->shape = {lay.batch, dim};
+  }
   pre->data.resize(nt * dim);
   post->data.resize(nt * dim);
   float hi, lo;
@@ -123,6 +128,8 @@ Status backward_f32(const Layer &layer, const TensorF32 &grad_out, const TensorF
   if (auto st = metal::decode_xy(layer.gamma, &gamma); !st)
     return st;
   *grad_in = input;
+  if (lay.seq == 1)
+    grad_in->shape = {lay.batch, dim};
   *grad_w = TensorF32::zeros(1, 2 * dim);
   float hi, lo;
   metal::split_double(cfg.eps, &hi, &lo);

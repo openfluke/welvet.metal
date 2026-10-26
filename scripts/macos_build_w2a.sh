@@ -20,6 +20,7 @@ for arg in "$@"; do
   case "$arg" in
     --meshbp-train) MODE="meshbp_train" ;;
     --training-all) MODE="training_all" ;;
+    --cameral-all) MODE="cameral_all" ;;
     --training-25-29-all) MODE="training_25_29_all" ;;
     --training-11-24-all) MODE="training_11_24_all" ;;
     --step-tween-all) MODE="step_tween_all" ;;
@@ -56,6 +57,7 @@ for arg in "$@"; do
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
       echo "all 29 modes: --training-all (full training checklist + GPU-only guards)"
+      echo "Cameral: --cameral-all (Freeze/Shadow/Adversarial/Memory, mixed branches, CamSync + GPU-only guards)"
       echo "sections 25–29: --training-25-29-all (five remaining Line modes + shared proxy volumes + guards)"
       echo "sections 11–24: --training-11-24-all (all requested credit modes + regression guards)"
       echo "MeshBP: --meshbp-train (all-family clock + StepBP/volume + NormalBP + Metal-only checks)"
@@ -67,6 +69,12 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "$MODE" == "cameral_all" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalCameralTrain|TestGoVMetalCamSync|TestGoStoreReplaceInvalidatesWires|TestGoVMetalOnly)$' -timeout 45m
+  exit 0
+fi
 
 if [[ "$MODE" == "meshbp_train" ]]; then
   export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
@@ -82,7 +90,7 @@ fi
 
 if [[ "$MODE" == "training_all" ]]; then
   export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
-  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalNormalBP|TestGoVMetalOnly|TestGoVMetalStepBPTrain|TestGoVMetalTweenTrain|TestGoVMetalTweenChainTrain|TestGoVMetalStepTweenTrain|TestGoVMetalStepTweenChainTrain|TestGoVMetalMeshBPTrain|TestGoVMetalMeshTweenTrain|TestGoVMetalMeshTweenChainTrain|TestGoVMetalTweenSplitTrain|TestGoVMetalStepTweenSplitTrain|TestGoVMetalTweenAltTrain|TestGoVMetalStepTweenAltTrain|TestGoVMetalProxyTrain|TestGoVMetalProxyVolumeTrain|TestGoVMetalMeshSplitModes|TestGoVMetalStepProxyTrain|TestGoVMetalLineAltEdge)$' -timeout 120m
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalNormalBP|TestGoVMetalOnly|TestGoVMetalStepBPTrain|TestGoVMetalTweenTrain|TestGoVMetalTweenChainTrain|TestGoVMetalStepTweenTrain|TestGoVMetalStepTweenChainTrain|TestGoVMetalMeshBPTrain|TestGoVMetalMeshTweenTrain|TestGoVMetalMeshTweenChainTrain|TestGoVMetalTweenSplitTrain|TestGoVMetalStepTweenSplitTrain|TestGoVMetalTweenAltTrain|TestGoVMetalStepTweenAltTrain|TestGoVMetalProxyTrain|TestGoVMetalProxyVolumeTrain|TestGoVMetalMeshSplitModes|TestGoVMetalStepProxyTrain|TestGoVMetalLineAltEdge|TestGoVMetalCameralTrain|TestGoVMetalCamSync|TestGoStoreReplaceInvalidatesWires)$' -timeout 150m
   exit 0
 fi
 

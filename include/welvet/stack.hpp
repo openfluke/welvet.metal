@@ -1,5 +1,6 @@
 #pragma once
 
+#include "welvet/cameral.hpp"
 #include "welvet/cnn1.hpp"
 #include "welvet/cnn2.hpp"
 #include "welvet/cnn3.hpp"
@@ -27,6 +28,9 @@
 
 #include <cstdint>
 #include <vector>
+#include <memory>
+
+namespace welvet::runtime::line { struct State; }
 
 namespace welvet::stack {
 
@@ -80,10 +84,11 @@ struct ParallelNest {
   int has_gate = 0; // when 1, dense_op holds Filter gate
 };
 
-// Thin heterogeneous chain host (Go parallel.Stack subset — no CamSync / BranchModes).
+// Heterogeneous chain/Parallel host; numerical work is Metal-only.
 struct Child {
   Kind kind = Kind::None;
   SplitAccel accel{};
+  cameral::Controls controls{};
   dense::Layer dense_op;
   rmsnorm::Layer rmsnorm_op;
   layernorm::Layer layernorm_op;
@@ -110,9 +115,11 @@ struct Child {
 };
 
 struct Layer {
+  std::shared_ptr<runtime::line::State> line_state;
   std::vector<Child> children;
   LayerMeta meta{};
   SplitAccel accel{};
+  cameral::Controls controls{};
 };
 
 // Flatten NestedStack into leaf Child* order (Go flattenLineOps).

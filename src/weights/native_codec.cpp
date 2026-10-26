@@ -869,6 +869,43 @@ Status WeightStore::decode_row_f64(int row, double *dst) const {
   return Status::Ok();
 }
 
+Status WeightStore::set_from_f32_gpu(const std::vector<float> &values) {
+  const int n = rows * cols;
+  if (n <= 0 || values.size() != size_t(n) || format != QuantFormat::None)
+    return Status::Err(StatusCode::InvalidArgument,
+                       "blend: invalid native store replacement");
+  std::vector<float> result(2);
+  if (dtype == DType::Float32) {
+    std::vector<float> out(n);
+    if (auto st = metal::run(
+            "op_native_repack",
+            {metal::read(values), metal::write(out), metal::write(result)},
+            {int(dtype), n, n * 4});
+        !st)
+      return st;
+    f32 = std::move(out);
+    native.clear();
+  } else {
+    if (native.empty())
+      return Status::Err(StatusCode::InvalidArgument,
+                         "blend: missing native payload");
+    std::vector<uint8_t> out(native.size());
+    if (auto st = metal::run(
+            "op_native_repack",
+            {metal::read(values), metal::write(out), metal::write(result)},
+            {int(dtype), n, int(out.size())});
+        !st)
+      return st;
+    if (result[1] != 0)
+      return Status::Err(StatusCode::Unsupported,
+                         "blend: native encoder unavailable");
+    native = std::move(out);
+    f32.clear();
+  }
+  scale = result[0];
+  return Status::Ok();
+}
+
 Status WeightStore::apply_sgd(const double *dW, double lr) {
   if (!dW || rows <= 0 || cols <= 0 || !std::isfinite(lr))
     return Status::Err(StatusCode::InvalidArgument, "weights: bad SGD arguments");

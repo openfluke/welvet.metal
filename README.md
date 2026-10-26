@@ -19,8 +19,8 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 
 | | |
 |--|--|
-| **Version** | **`0.48`** — working-tree milestone, 2026-10-26 |
-| **Engine board** | **48 / 100** — supported FormatNone layer/training paths complete; broader engine gates remain |
+| **Version** | **`0.68`** — working-tree milestone, 2026-10-26 |
+| **Engine board** | **68 / 100** — individual feature gates aligned with the CPU sibling's accounting; independently verified on Metal |
 | **Compute** | Apple GPU (Metal) — primary · Apple Neural Engine — separate gate |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) — local Go source used by w2a |
 | **CPU sibling** | [welvet.cpp](https://github.com/openfluke/welvet.cpp) — separate backend; score is not inherited |
@@ -33,7 +33,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 ```bash
 ./scripts/build_macos.sh
 ./build/example_metal_smoke          # device + shader compile + buffer RT
-./build/welvet_dense_fwd --version   # 0.48
+./build/welvet_dense_fwd --version   # 0.68
 ./build/welvet_dense_fwd --identity  # metal:<Apple GPU>…
 ./build/welvet_dense_fwd --gaps
 ./scripts/macos_build_w2a.sh --training-all
@@ -46,9 +46,10 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | FormatNone native parameter storage and GPU SGD across all 34 dtypes | ✅ |
 | NormalBP, all 29 numbered training modes, Grid/Line/Mesh scheduling | ✅ |
 | KMeans outputs, seven Parallel combines, nested/polymorphic branches | ✅ |
+| Freeze, Shadow, Adversarial, Memory, mixed branch credit and CamSync | ✅ |
 | w2a parity, benchmark reset, GPU-only and rejected-host-API checks | ✅ |
 | Persistent graph/tape residency and fused training | 🚧 |
-| Packed quant formats, model/IO, remaining systems, Cameral/CamSync | ⬜ |
+| Packed quant formats, model/IO and remaining systems | ⬜ |
 
 GDN is Float32-only. The 34-dtype sweeps validate native **parameter storage**
 with the current Float32 tensor interface and documented software-promoted
@@ -179,7 +180,7 @@ separate from this numerical parity spectrum.
 | Mark | Meaning | Credit |
 |---|---|---:|
 | ⬜ | Planned; no validated Metal implementation | 0% |
-| 🚧 | Implemented subset with reproducible evidence + listed gaps | 50% of gate |
+| 🚧 | Implemented subset with reproducible evidence + listed gaps | Sum of accepted subgates; 50% only for an undivided partial gate |
 | ✅ | Declared acceptance gate passes (w2a + device identity) | 100% of gate |
 | N/A | Outside Metal scope (reason required) | No credit |
 | BLOCKED | Missing device / SDK / unresolved semantics | 0% |
@@ -194,24 +195,26 @@ Identical ten categories / weights as Go Welvet. Credit only from **this** Metal
 
 | # | Category (Go board) | Wt | Metal today / remaining gate | Status | Earned |
 |---:|---|---:|---|:---:|---:|
-| 1 | **Foundation** — core, weights, quant, Metal runtime, tiling | 15 | Native FormatNone×34 and software-promoted GPU math; packed quant and broader tensor/tiling APIs remain | 🚧 | **7.5** |
-| 2 | **Dense MatVec** — FormatNone×34 + quants; F/B/update | 15 | FormatNone F/B/native GPU SGD verified; packed quant kernels remain | 🚧 | **7.5** |
-| 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Seq/Res, seqmix | 14 | Supported layer baselines verified; cross-attention, broader variants and ConvMix remain | 🚧 | **7** |
-| 4 | **CNN / RNN / LSTM** | 6 | Supported forward/BPTT/SGD verified; broader convolution/state acceptance matrix remains | 🚧 | **3** |
-| 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | Declared baseline F/B/training contracts verified; GDN Float32, ordinary Parallel combines | ✅ | **7** |
-| 6 | **Runtime + architecture** — Grid, forward, backward, training, Line/Mesh | 8 | All-family numerical execution and schedules verified; persistent resident graph/tapes remain | 🚧 | **4** |
+| 1 | **Foundation** — core, weights, quant, Metal runtime, tiling | 15 | Tensor/activation baseline 3 + native stores 4 + Metal runtime 4; packed quant/broader tensor/tiling 4 open | 🚧 | **11** |
+| 2 | **Dense MatVec** — FormatNone×34 + quants; F/B/update | 15 | FormatNone forward 4 + backward 4 + native SGD 4; packed quant 3 open | 🚧 | **12** |
+| 3 | **Transformer stack** — MHA, SwiGLU, norms, Softmax, Emb, Seq/Res, seqmix | 14 | Norms/Softmax 3 + Embedding 2 + SwiGLU 2 + MHA baseline 3 + Seq/Res 3; broader attention/ConvMix 1 open | 🚧 | **13** |
+| 4 | **CNN / RNN / LSTM** | 6 | CNN1/2/3, RNN, LSTM and recurrent state/BPTT, one point each; declared baseline contracts | ✅ | **6** |
+| 5 | **Extended layers** — GDN, ConvT1–3, Mamba, KMeans, Parallel, Metacognition | 7 | ConvT family, Mamba, KMeans, Meta, Parallel, GDN(f32), Stack/Cameral; one point each | ✅ | **7** |
+| 6 | **Runtime + architecture** — Grid, forward, backward, training, Line/Mesh | 8 | Grid/topology 2 + dispatch/forward 2 + reverse/SGD 2 + Line/Mesh schedules 2; residency scored in §10 | ✅ | **8** |
 | 7 | **Systems** — dna, evolution, tween, tanhi, telemetry | 5 | Tween/local-credit subgate complete; other four subgates remain | 🚧 | **1** |
 | 8 | **Model / IO** — tokenizer, entity, transformer, sampling, hf | 8 | Model construction/loading/checkpoint/generation pipeline remains | ⬜ | **0** |
-| 9 | **Training credit** — 29 modes + Cameral / CamSync | 8 | All 29 numbered modes verified; advanced modifiers and Cameral/CamSync remain | 🚧 | **4** |
-| 10 | **Peak fused / no host ALU** | 14 | GPU-only numerical execution enforced; full residency, fusion and decoder throughput remain | 🚧 | **7** |
-| | **Total → version** | **100** | **48 points** | **🚧** | **`0.48`** |
+| 9 | **Training credit** — 29 modes + Cameral / CamSync | 8 | Numbered credits 7 + modifiers/mixed branches 0.5 + CamSync/BlendStores 0.5 | ✅ | **8** |
+| 10 | **Peak fused / no host ALU** | 14 | Device kernel baseline 1 + rejected host numerical fallbacks 1; full residency/fusion/decoder throughput 12 open | 🚧 | **2** |
+| | **Total → version** | **100** | **68 points** | **🚧** | **`0.68`** |
 
-**Scoring audit (2026-10-26):** partial categories receive the documented 50%
-credit; the systems category uses its five explicit one-point subgates below
-(Tween = 1, others = 0). A layer ✅ covers its declared supported baseline, not
-all future variants. The engine score is separate from the 60–100% numerical
-parity spectrum. All 29 training modes being complete does not make the whole
-engine 1.0.0. No release tag or sibling-repository credit is implied.
+**Scoring audit (2026-10-26):** this replaces the earlier coarse 48-point audit
+with explicit subgates, at the same granularity as welvet.cpp's 67-point board.
+The version change includes an accounting correction; it does not mean twenty
+points of new code landed in this change. Metal earns its own evidence: it also
+closes CamSync/Cameral gates that the sibling currently leaves open. Baseline ✅
+does not cover every future variant. Residency is counted once, in §10. See
+[VERSIONING.md](VERSIONING.md) for the arithmetic and remaining 32 points.
+Engine completion is separate from numerical parity; no Git release tag is implied.
 
 **Path to 1.0:** same order Go used / welvet.cpp is following — Dense FormatNone + NormalBP → layers → Step/Mesh/Tween* → Systems + Model/IO → CamSync + peak fused Metal. welvet.cpp’s ✅ list is the **port order**, not transferred credit.
 
@@ -272,7 +275,7 @@ engine 1.0.0. No release tag or sibling-repository credit is implied.
 |---|---|---|:---:|
 | `lucy/` | LPD / TrainStackCE / Lean density / Score | §8/§9 gates before credit | ⬜ |
 | `model/wav2vec2/` | Inventory + port applicable speech paths | model scope | ⬜ |
-| CamSync / BlendStores | Soft/hard blend across resident stores | §9 | ⬜ |
+| CamSync / BlendStores | GPU soft/hard blend, groups, cross-store endpoints and cache invalidation; staging remains | §9 | ✅ |
 | `stub/` seed · serialization · hardware · memory · fountain · donate · … | Inventory; stubs ≠ done | off-board until gated | ⬜ |
 | `apps/` (octo, …) | Native CLI shells on Metal engine | off-board | ⬜ |
 
@@ -421,7 +424,7 @@ acceptance below remains separate.
 | 13 | **Embedding** | Gather | Scatter/reduction; defined token dX | ✅ | ✅ |
 | 14 | **KMeans** | Soft assignment + centroids | Declared differentiable paths | ✅ | ✅ |
 | 15 | **Softmax** | Standard/grid/temp/variants | JVPs (dX; weightless) | ✅ | ✅ |
-| 16 | **Parallel** | Branches, routing, seven combines | Ordinary branch/gate credit; Cameral separate | ✅ | ✅ |
+| 16 | **Parallel** | Branches, routing, seven combines | Ordinary and mixed Cameral branch/gate credit | ✅ | ✅ |
 | 17 | **Sequential** | Ordered child chain | Reverse child credit | ✅ | ✅ |
 | 18 | **Residual** | F(x) + skip | F reverse + skip grad | ✅ | ✅ |
 | 19 | **Metacognition** | Observed compute + rules | lastGate-scale + Observed bwd | ✅ | ✅ |
@@ -524,12 +527,12 @@ Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = 
 | 27 | StepTweenSplitLinearCache | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
 | 28 | StepTweenSplitHeadProxyAsync | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
 | 29 | StepTweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
-| — | Freeze | Freeze | ⬜ | ⬜ | ⬜ | |
-| — | Shadow | Freeze | ⬜ | ⬜ | ⬜ | |
-| — | Adversarial | BP-gated | ⬜ | ⬜ | ⬜ | |
-| — | Memory | BP-gated | ⬜ | ⬜ | ⬜ | |
-| — | CamSync / BlendStores | — | ⬜ | ⬜ | ⬜ | |
-| — | Cameral BranchModes (Parallel) | — | ⬜ | ⬜ | ⬜ | |
+| — | Freeze | Freeze | ✅ | ✅ | ✅ | 0.68 |
+| — | Shadow | Freeze | ✅ | ✅ | ✅ | 0.68 |
+| — | Adversarial | BP-gated | ✅ | ✅ | ✅ | 0.68 |
+| — | Memory | BP-gated | ✅ | ✅ | ✅ | 0.68 |
+| — | CamSync / BlendStores | — | ✅ | ✅ | ✅ | 0.68 |
+| — | Cameral BranchModes (Parallel) | — | ✅ | ✅ | ✅ | 0.68 |
 
 Per-layer evidence tables (leaf ×34, volume shapes, speed, wires): **[docs/TRAINING_CHECKLIST.md](docs/TRAINING_CHECKLIST.md)**. Mode summary table above stays the high-level board; tick detailed rows in the checklist.
 
@@ -599,7 +602,7 @@ workloads. Persistent graph/tape residency and fusion remain separate gates.
 
 | Surface | Status |
 |---|:---:|
-| ABI negotiation / version | 🚧 version `0.48`; general descriptor negotiation open |
+| ABI negotiation / version | 🚧 version `0.68`; general descriptor negotiation open |
 | Metal init / available / identity | ✅ |
 | Gaps census counters | ✅ |
 | Tensor / weight / layer descriptors | ⬜ |
@@ -625,7 +628,7 @@ Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ e
 | Resident gradients + clear policy | 🚧 GPU arithmetic; exports/staging between kernels |
 | Resident update in declared storage semantics | 🚧 native GPU SGD/encoding; exports and mirror refresh remain |
 | Host staging/export boundary | ✅ copies/exports only; numerical updates stay on GPU |
-| CamSync on resident stores | ⬜ |
+| CamSync on resident stores | 🚧 GPU arithmetic/cache coherence complete; persistent graph residency open |
 | Checkpoint/export for ENTITY flows | ⬜ |
 | Migration before device/plan change | ⬜ |
 | Memory budget accounting | ⬜ |
