@@ -2326,4 +2326,116 @@ welvet_status welvet_metacognition_normalbp_f32(int32_t batch, int32_t seq, int3
   return to_c(welvet::Status::Ok());
 }
 
+welvet_status welvet_kmeans_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t num_clusters, int32_t feature_dim, int32_t output_mode,
+    int32_t act, double temperature, int32_t dtype, int32_t /*backend*/, const float* W,
+    const float* x, const float* grad_or_target, int32_t use_target, double lr, float* pre,
+    float* post, float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || !W || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !W_after || !loss) {
+    return to_c(welvet::Status::Err(welvet::StatusCode::InvalidArgument,
+                                   "kmeans NormalBP: bad arguments"));
+  }
+  welvet::kmeans::Config cfg;
+  cfg.num_clusters = num_clusters;
+  cfg.feature_dim = feature_dim;
+  cfg.output_mode = welvet::kmeans::OutputMode(output_mode);
+  cfg.activation = welvet::Activation(act);
+  cfg.temperature = temperature;
+  welvet::kmeans::Layer layer;
+  auto st = welvet::kmeans::new_configured(cfg, welvet::DType(dtype), W, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape = seq == 1 ? std::vector<int64_t>{batch, feature_dim}
+                         : std::vector<int64_t>{batch, seq, feature_dim};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * feature_dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::kmeans::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::kmeans::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::kmeans::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::kmeans::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
+welvet_status welvet_parallel_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t out_feat, int32_t branches, int32_t combine,
+    int32_t sparse_k, int32_t dtype, int32_t /*backend*/, double disagree_beta,
+    const float* packed, const float* x, const float* grad_or_target, int32_t use_target,
+    double lr, float* pre, float* post, float* dX, float* dW, float* W_after, double* loss) {
+  if (batch <= 0 || seq <= 0 || !packed || !x || !grad_or_target || !pre || !post ||
+      !dX || !dW || !W_after || !loss) {
+    return to_c(welvet::Status::Err(welvet::StatusCode::InvalidArgument,
+                                   "parallel NormalBP: bad arguments"));
+  }
+  welvet::parallel::Config cfg;
+  cfg.dim = dim;
+  cfg.out_feat = out_feat;
+  cfg.branches = branches;
+  cfg.combine = welvet::parallel::Combine(combine);
+  cfg.sparse_k = sparse_k;
+  cfg.seq_len = seq == 1 ? 0 : seq;
+  cfg.disagree_beta = disagree_beta;
+  welvet::parallel::Layer layer;
+  auto st = welvet::parallel::new_configured(cfg, welvet::DType(dtype), packed, &layer);
+  if (!st) return to_c(st);
+  welvet::TensorF32 input;
+  input.shape = seq == 1 ? std::vector<int64_t>{batch, dim}
+                         : std::vector<int64_t>{batch, seq, dim};
+  input.data.assign(x, x + static_cast<std::size_t>(batch * seq * dim));
+  welvet::TensorF32 pre_t, post_t;
+  st = welvet::parallel::forward(layer, input, &pre_t, &post_t);
+  if (!st) return to_c(st);
+  const std::size_t nout = post_t.data.size();
+  welvet::TensorF32 gy;
+  gy.shape = post_t.shape;
+  gy.data.assign(grad_or_target, grad_or_target + nout);
+  *loss = 0.0;
+  if (use_target) {
+    st = welvet::runtime::training::mse(post_t, gy, loss);
+    if (!st) return to_c(st);
+    welvet::TensorF32 gtmp;
+    st = welvet::runtime::training::mse_grad(post_t, gy, &gtmp);
+    if (!st) return to_c(st);
+    gy = std::move(gtmp);
+  }
+  welvet::TensorF32 dx_t, dw_t;
+  st = welvet::parallel::backward_f32(layer, gy, input, pre_t, &dx_t, &dw_t);
+  if (!st) return to_c(st);
+  if (lr != 0.0) {
+    st = welvet::parallel::apply_grad_sgd(&layer, dw_t, lr);
+    if (!st) return to_c(st);
+  }
+  st = welvet::parallel::export_packed_f32(layer, W_after);
+  if (!st) return to_c(st);
+  std::memcpy(pre, pre_t.data.data(), pre_t.data.size() * sizeof(float));
+  std::memcpy(post, post_t.data.data(), post_t.data.size() * sizeof(float));
+  std::memcpy(dX, dx_t.data.data(), dx_t.data.size() * sizeof(float));
+  std::memcpy(dW, dw_t.data.data(), dw_t.data.size() * sizeof(float));
+  return to_c(welvet::Status::Ok());
+}
+
 } // extern "C"

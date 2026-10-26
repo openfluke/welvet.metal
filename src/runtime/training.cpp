@@ -141,6 +141,12 @@ Status sgd_dense(architecture::Grid& g, const forward::Result& fwd, const backwa
     case architecture::OpKind::GDN:
       st_a = gdn::apply_grad_sgd(&cell->gdn_op, *it->second, lr);
       break;
+    case architecture::OpKind::KMeans:
+      st_a = kmeans::apply_grad_sgd(&cell->kmeans_op, *it->second, lr);
+      break;
+    case architecture::OpKind::Parallel:
+      st_a = parallel::apply_grad_sgd(&cell->parallel_op, *it->second, lr);
+      break;
     default:
       return Status::Gap(
           "training: SGD cell Op not yet on Metal (Dense/…/Stack/GDN NormalBP first)");

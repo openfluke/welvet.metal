@@ -1,6 +1,7 @@
 #pragma once
 
 #include "welvet/dense.hpp"
+#include "welvet/stack.hpp"
 #include "welvet/dtype.hpp"
 #include "welvet/status.hpp"
 #include "welvet/tensor.hpp"
@@ -38,10 +39,13 @@ int sparse_k_eff(const Config& cfg);
 double disagree_beta_eff(const Config& cfg);
 Status validate(Config* cfg);
 
-// Dense-only Parallel (WPL1 NewConfigured). Soft-double Dense + host combine.
+using Branch = stack::Child;
+using BranchKind = stack::Kind;
+
+// Branch scheduling on the host; all numerical work executes on Metal.
 struct Layer {
   Config cfg{};
-  std::vector<dense::Layer> branches;
+  std::vector<Branch> branches;
   std::optional<dense::Layer> gate; // filter only
 };
 
@@ -51,4 +55,13 @@ Status new_configured(const Config& cfg, DType dt, const float* packed_or_null, 
 // Input [batch,dim] or [batch,seq,dim]. pre = input copy; post = combined.
 Status forward(Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
 
+Status new_from_branches(const Config& cfg, std::vector<Branch> branches,
+                         std::optional<dense::Layer> gate, Layer* out);
+dense::Layer* dense_branch(Layer& layer, int i);
+const dense::Layer* dense_branch(const Layer& layer, int i);
+int grad_w_size(const Layer& layer);
+Status backward_f32(Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+Status apply_grad_sgd(Layer* layer, const TensorF32& grad_w, double lr);
+Status export_packed_f32(const Layer& layer, float* dst);
 } // namespace welvet::parallel

@@ -18,7 +18,7 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 
 | Path | Execution today |
 |---|---|
-| NormalBP layers | Dense, RMSNorm, LayerNorm, SwiGLU, Softmax, Embedding, MHA, CNN1/2/3, ConvT1/2/3, RNN, LSTM, Sequential, Residual, Mamba, Metacognition, GDN and Stack use Metal numerical kernels |
+| NormalBP layers | Dense, RMSNorm, LayerNorm, SwiGLU, Softmax, Embedding, MHA, CNN1/2/3, ConvT1/2/3, RNN, LSTM, Sequential, Residual, KMeans, Mamba, Metacognition, GDN, Parallel and Stack use Metal numerical kernels |
 | MSE / MSEGrad | Metal kernels; scalar loss is exported in IEEE float64 representation |
 | SGD and native storage updates | Metal arithmetic and native FormatNone encoding across all 34 dtypes; bias updates run on Metal too |
 | GDN | Metal Float32 truncated-BPTT; state/conv history stop-gradient |
@@ -27,10 +27,10 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 | Split / Alt and requested Step/Mesh variants | GPU 1/N scaling, refreshed global Alt phases, frozen Line per-hop credit, last-tick MeshTween and BPTT MeshTweenChain |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging remain |
 | Mesh gradient joins | Metal accumulation kernel; Dense mesh-clock ×34, disabled-cell and remote-link checks |
-| KMeans / Parallel NormalBP | Open; no CPU numerical fallback |
+| KMeans / Parallel NormalBP | Metal soft assignments, all seven combines, reverse routing, gate gradients and native GPU SGD |
 | Performance | Correctness gates passed; full residency, dispatch reduction and throughput tuning remain open |
 
-**Validated 2026-10-26:** all **17 NormalBP evidence sections / 128 case checks**
+**Validated 2026-10-26:** all **19 NormalBP evidence sections / 219 case groups**
 passed in `w2a` under `TestGoVMetalNormalBP`, including all dtype loops and leaf,
 chain and volumetric fixtures. `TestGoVMetalOnly` also passed its primitive,
 activation/derivative, native update, cache-coherence, rejected-host-API and 13
@@ -48,6 +48,11 @@ FP32 value; normal values still require exact bits. MHA leaf ×34 retains its
 existing ≥strict gradient floor. Softmax retains ≥loose (with stricter rows as
 shown), and GDN retains ≥loose leaf / ≥industry volume. Stack's existing binary
 211 post allowance is `max|Δ| <= 1e-18`, with its other checks retained.
+KMeans input-gradient cancellation has a separate finite band: mismatching
+`dX` / volume `gradIn` values must both have magnitude ≤`1e-12` and differ by
+≤`1e-14`. This is a near-zero cancellation allowance, not FP32 subnormal
+flushing. KMeans pre/post, weight gradients and updated weights retain their
+exact gates; its scalar loss retains the common finite band.
 
 Checkmarks below indicate validated correctness under these bands, not a speed
 win or completion of GPU residency/performance work. Unsupported and unverified
@@ -320,6 +325,58 @@ Timing: same `--bench=N` / spd%Δ convention. NestedStack of Dense Dim→Dim Lin
 
 ---
 
+## w2a Go↔Metal (KMeans NormalBP) — sign-off evidence
+
+Run: `./scripts/macos_build_w2a.sh --normalbp-all` (`KMeans` and KMeans
+`NormalBPEdges` groups in `TestGoVMetalNormalBP`).
+Wires: `KMB1`/`KMBO`, `KMV1`/`KMVO`; exported `welvet_kmeans_normalbp_f32` ABI.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| Probabilities and Features Float32 | [x] | Forward, stored pre, dX, dW, native SGD, finite MSE loss |
+| Probabilities and Features ×34 | [x] | FormatNone native centers; both output modes |
+| All eight activations / temperatures | [x] | Probabilities and Features; temperature 0→1, 0.25, 2.5; rank-3 inputs |
+| Volume 111 and two-layer chain Float32 | [x] | Features, complete reverse credit and updated centers |
+| Volume 111 / 211 ×34 | [x] | Output, input gradient, loss and updated native weights |
+| Volume 222 Float32 | [x] | Multi-cell joins and reverse-hop credit |
+
+**Validated:** 2026-10-26, unreleased. Metal computes distances, softmax,
+reconstruction, activation, assignment/center/input gradients and SGD. Go's
+Float32 activation/derivative materialization points are preserved. Dynamic GPU
+scratch has no fixed cluster-count cap. The narrow input-gradient cancellation
+band above is explicit; larger errors and non-finite values fail. Performance
+and complete graph residency remain separate work.
+
+---
+
+## w2a Go↔Metal (Parallel NormalBP) — sign-off evidence
+
+Run: `./scripts/macos_build_w2a.sh --normalbp-all` (`Parallel`, `ParallelPoly`,
+Parallel `NormalBPEdges`, and `ParallelVolumes` groups).
+Wires: `PNB1`/`PNBO`, `PPB1`/`PPBO`, `PNV1`/`PNVO`, `NBL1`/`NBLO`.
+Exported Dense-branch ABI: `welvet_parallel_normalbp_f32`.
+
+| Evidence | Status | Scope |
+|---|:---:|---|
+| All seven combines Float32 | [x] | Concat, Add, Avg, Filter, Max, SparseK, Disagree |
+| Direct gradients for all seven combines ×34 | [x] | Rank-3 pre/post, dX, dW, native SGD; Filter gate weights included |
+| Polymorphic branches | [x] | All 23 branch kinds Float32; 15 dtype-generic branch fixtures ×34 |
+| Nested Parallel / Stack | [x] | Recursive GPU forward/backward and packed updates |
+| Routing edges | [x] | First-branch Max ties, index-ordered SparseK ties, SparseK=1, zero lr, unequal-width Concat, nested Filter gate |
+| Volume 111 / chain / 211 ×34 | [x] | Add and Avg; loss, output, input gradients, native weights |
+| Volume 222 Float32 | [x] | Add branches through multi-cell graph joins |
+| ABI / host-API guard | [x] | Exported ABI gradients and SGD match C++ Metal API; legacy CPU matvec still rejects |
+
+**Validated:** 2026-10-26, unreleased. Branch loops on the host only schedule
+kernels and stage buffers. Metal performs every combine, routing operation,
+softmax gate derivative and input-gradient reduction. Input gradients cast only
+after the promoted branch sum; Avg backward uses the promoted reciprocal.
+Integer-backed 53-bit arithmetic preserves cancellation and Go arm64 fused
+multiply/add rounding in Disagree. Native FormatNone weights remain native.
+Other TrainModes, full residency and throughput tuning retain separate gates.
+
+---
+
 ## w2a Go↔Metal (StepBP Line + MeshBP) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --stepbp-train`  
@@ -354,7 +411,7 @@ host code schedules ticks, stores tapes and stages buffers.
 Go's grid ModeMeshBP uses that same Forward+Step path. They do not establish
 mesh-clock BPTT parity for non-Dense cells. The generic mesh runtime dispatches
 supported GPU layers, but the mesh-clock wire and its parity sign-off cover Dense.
-KMeans and Parallel remain deferred; no CPU fallback is supplied.
+KMeans and Parallel remain deferred for this mode; no CPU fallback is supplied.
 
 **Validated:** 2026-10-26, unreleased. Precision policy above applies. Benchmark
 repetitions rebuild the initial child configuration and weights; timing includes
@@ -396,8 +453,8 @@ chain-rule credit. Host code schedules the walk and stages buffers/tapes.
 **Validated:** 2026-10-26, unreleased. Exact tensor bits are required where
 specified; loss uses the finite float2 band above. GDN leaf weights require
 ≥strict, rather than exact bits. Volume weight subnormal flushing follows the
-existing Metal policy. KMeans and Parallel remain deferred because their
-NormalBP kernels are unavailable; no host numerical fallback is supplied.
+existing Metal policy. KMeans and Parallel remain unverified for ModeTween; their NormalBP
+sign-off does not transfer to this mode. No host numerical fallback is supplied.
 This sign-off is ModeTween only. TweenChain has its own sign-off below;
 Split/Alt and the requested Step/Mesh variants have separate sign-offs below; proxy/cache/sparse variants remain pending. Graph residency and performance tuning
 remain open; benchmark timings include resetting the fixture.
@@ -462,7 +519,7 @@ Single collect tape; global 1/N share at full lr. Numerical work uses Metal kern
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenSplit ModeStepTweenSplit) — sign-off evidence
 
@@ -483,7 +540,7 @@ Line per-hop Split at full lr; N counts trainable leaves under that hop. The pop
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (TweenAlt ModeTweenAlt) — sign-off evidence
 
@@ -504,7 +561,7 @@ Split at full lr, refresh prediction and gap, then Tween at lr×0.5. AltTimes=1 
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenAlt ModeStepTweenAlt) — sign-off evidence
 
@@ -525,7 +582,7 @@ Line per-hop Split→Tween at full/half lr with a frozen popped gap. Its shared 
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (MeshTween mesh-clock) — sign-off evidence
 
@@ -545,7 +602,7 @@ Last-tick captured mesh credit: projected local updates at lr×0.5; no BPTT. Num
 
 **Scope:** non-Dense mesh-clock parity remains open. Shared volume evidence exercises the Go ModeTween volume path; it does not establish mesh-clock parity for those cells.
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (MeshTweenChain mesh-clock) — sign-off evidence
 
@@ -565,7 +622,7 @@ Mesh-clock BPTT and SGD at full lr (FamilyBP, equivalent to MeshBP). Numerical w
 
 **Scope:** non-Dense mesh-clock parity remains open. Shared volume evidence exercises the Go ModeTweenChain volume path; it does not establish mesh-clock parity for those cells.
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTween ModeStepTween) — sign-off evidence
 
@@ -586,7 +643,7 @@ Line per-hop projected local credit at lr×0.5, applied when a training flight p
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenChain ModeStepTweenChain) — sign-off evidence
 
@@ -607,7 +664,7 @@ Line per-hop true chain-rule BP at full lr, applied when a training flight pops.
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unsupported. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
 
 ## 1 — NormalBP
 
@@ -632,14 +689,14 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported NormalBP layer families validated inside nodes and in volumes, including dtype coverage (GDN Float32 only), under the precision policy above. KMeans and Parallel remain open. StepBP Line and the requested MeshBP evidence are validated below; non-Dense mesh-clock parity remains separate.
+**Checkpoint:** all 23 NormalBP layer families validated inside nodes and in volumes, including dtype coverage (GDN Float32 only), under the precision policy above. KMeans and Parallel are included, with the declared KMeans cancellation band. The complete NormalBP and Metal-only regression passed 219 case groups in 171.771 seconds; shared and static builds passed. StepBP Line and the requested MeshBP evidence are validated below; non-Dense mesh-clock parity remains separate.
 
 ---
 

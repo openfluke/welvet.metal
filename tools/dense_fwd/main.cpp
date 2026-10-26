@@ -1485,6 +1485,12 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "MCV1", 4) == 0) {
     return run_volume_metacognition_normalbp(bench_iters);
   }
+  if (std::memcmp(magic,"NBL1",4)==0)return run_normalbp_child(bench_iters);
+  if (std::memcmp(magic,"KMB1",4)==0)return run_kmeans_normalbp(bench_iters);
+  if (std::memcmp(magic,"KMV1",4)==0)return run_volume_kmeans_normalbp(bench_iters);
+  if (std::memcmp(magic,"PNV1",4)==0)return run_volume_parallel_normalbp(bench_iters);
+  if (std::memcmp(magic,"PNB1",4)==0)return run_parallel_normalbp(bench_iters);
+  if (std::memcmp(magic,"PPB1",4)==0)return run_parallel_poly_train(bench_iters);
   if (std::memcmp(magic, "GDB1", 4) == 0) {
     return run_gdn_normalbp(bench_iters);
   }

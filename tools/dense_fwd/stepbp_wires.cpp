@@ -13,6 +13,8 @@
 #include "welvet/runtime/tween_chain_train.hpp"
 #include "welvet/runtime/step.hpp"
 #include "welvet/stack.hpp"
+#include "welvet/parallel.hpp"
+#include "welvet/runtime/training.hpp"
 #include "welvet/cnn1.hpp"
 #include "welvet/cnn2.hpp"
 #include "welvet/cnn3.hpp"
@@ -1004,4 +1006,295 @@ int run_tween_leaf(int bench_iters, VolumeTrainMode mode) {
     if (!write_exact(&n, 1) || (n > 0 && !write_exact(Wa.data(), Wa.size()))) return 2;
   }
   return 0;
+}
+
+
+static welvet::Status train_parallel(welvet::parallel::Layer& l,const welvet::TensorF32& x,const welvet::TensorF32& target,double lr,double* loss){
+ welvet::TensorF32 p,o,gy,dx,dw;
+ if(auto st=welvet::parallel::forward(l,x,&p,&o);!st)return st;
+ welvet::TensorF32 shaped_target=target;if(shaped_target.data.size()==o.data.size())shaped_target.shape=o.shape;
+ if(auto st=welvet::runtime::training::mse(o,shaped_target,loss);!st)return st;
+ if(auto st=welvet::runtime::training::mse_grad(o,shaped_target,&gy);!st)return st;
+ if(auto st=welvet::parallel::backward_f32(l,gy,x,p,&dx,&dw);!st)return st;
+ return welvet::parallel::apply_grad_sgd(&l,dw,lr);
+}
+int run_parallel_poly_train(int bench_iters) {
+  int32_t combine_i = 1, cfg_dim = 0, cfg_out_feat = 0, cfg_seq = 0, branches = 0;
+  if (!read_exact(&combine_i, 1) || !read_exact(&cfg_dim, 1) || !read_exact(&cfg_out_feat, 1) ||
+      !read_exact(&cfg_seq, 1) || !read_exact(&branches, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short PPB1 header\n");
+    return 2;
+  }
+  if (branches <= 0) return 1;
+  if (combine_i != static_cast<int32_t>(welvet::parallel::Combine::Add) &&
+      combine_i != static_cast<int32_t>(welvet::parallel::Combine::Avg)) {
+    std::fprintf(stderr, "welvet_dense_fwd: PPB1 combine must be Add/Avg\n");
+    return 1;
+  }
+  ChildReader initial;
+  std::vector<welvet::parallel::Branch> brs;
+  brs.reserve(static_cast<std::size_t>(branches));
+  for (int i = 0; i < branches; ++i) {
+    welvet::parallel::Branch br;
+    if (!read_child(initial, &br)) {
+      std::fprintf(stderr, "welvet_dense_fwd: PPB1 bad branch %d\n", i);
+      return 2;
+    }
+    brs.push_back(std::move(br));
+  }
+  int32_t x_rank = 0, t_rank = 0;
+  if (!read_exact(&x_rank, 1) || x_rank <= 0) return 2;
+  std::vector<int32_t> x_shape(static_cast<std::size_t>(x_rank));
+  if (!read_exact(x_shape.data(), x_shape.size())) return 2;
+  int x_n = 1;
+  for (int32_t d : x_shape) x_n *= static_cast<int>(d);
+  std::vector<float> x(static_cast<std::size_t>(x_n));
+  if (!read_exact(x.data(), x.size())) return 2;
+  if (!read_exact(&t_rank, 1) || t_rank <= 0) return 2;
+  std::vector<int32_t> t_shape(static_cast<std::size_t>(t_rank));
+  if (!read_exact(t_shape.data(), t_shape.size())) return 2;
+  int t_n = 1;
+  for (int32_t d : t_shape) t_n *= static_cast<int>(d);
+  std::vector<float> tgt(static_cast<std::size_t>(t_n));
+  if (!read_exact(tgt.data(), tgt.size())) return 2;
+  double lr = 0.0;
+  if (!read_exact(&lr, 1)) return 2;
+
+  welvet::parallel::Config cfg;
+  cfg.dim = cfg_dim;
+  cfg.out_feat = cfg_out_feat;
+  cfg.branches = branches;
+  cfg.combine = static_cast<welvet::parallel::Combine>(combine_i);
+  cfg.seq_len = cfg_seq;
+
+  welvet::TensorF32 xin, target;
+  xin.shape.assign(x_shape.begin(), x_shape.end());
+  xin.data = x;
+  target.shape.assign(t_shape.begin(), t_shape.end());
+  target.data = tgt;
+
+  double loss = 0.0;
+  welvet::parallel::Layer layer;
+
+  auto once = [&]() -> welvet::Status {
+    std::vector<welvet::parallel::Branch> copy;
+    copy.reserve(brs.size());
+    ChildReader replay(&initial.bytes);
+    for(size_t i=0;i<brs.size();++i){welvet::parallel::Branch b;if(!read_child(replay,&b))return welvet::Status::Err(welvet::StatusCode::InvalidArgument,"parallel: replay");copy.push_back(std::move(b));}
+    if (auto st = welvet::parallel::new_from_branches(cfg, std::move(copy), std::nullopt, &layer);
+        !st) {
+      return st;
+    }
+    return train_parallel(layer,xin,target,lr,&loss);
+  };
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 2; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
+  } else {
+    auto st = once();
+    if (!st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+
+  if (!write_magic("PPBO") || !write_exact(&loss, 1) || !write_exact(&branches, 1)) return 2;
+  for (int i = 0; i < branches; ++i) {
+    const int32_t nw = welvet::stack::child_grad_w_size(layer.branches[static_cast<std::size_t>(i)]);
+    std::vector<float> Wa(static_cast<std::size_t>(nw > 0 ? nw : 0));
+    if (nw > 0) {
+      auto est = welvet::stack::child_export_f32(layer.branches[static_cast<std::size_t>(i)],
+                                                    Wa.data());
+      if (!est) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", est.message.c_str());
+        return 1;
+      }
+    }
+    if (!write_exact(&nw, 1)) return 2;
+    if (nw > 0 && !write_exact(Wa.data(), Wa.size())) return 2;
+  }
+  return 0;
+}
+
+int run_parallel_normalbp(int bench_iters) {
+ const char* out_magic="PNBO";bool read_combine=true;auto default_combine=welvet::parallel::Combine::Add;
+  int32_t batch = 0, dim = 0, out_feat = 0, branches = 0, dtype = 1;
+  if (!read_exact(&batch, 1) || !read_exact(&dim, 1) || !read_exact(&out_feat, 1) ||
+      !read_exact(&branches, 1) || !read_exact(&dtype, 1)) {
+    std::fprintf(stderr, "welvet_dense_fwd: short cameral train header\n");
+    return 2;
+  }
+  if (batch <= 0 || dim <= 0 || out_feat <= 0 || branches <= 0) return 1;
+  welvet::parallel::Combine combine = default_combine;
+  if (read_combine) {
+    int32_t combine_i = static_cast<int32_t>(default_combine);
+    if (!read_exact(&combine_i, 1)) return 2;
+    combine = static_cast<welvet::parallel::Combine>(combine_i);
+    switch (combine) {
+      case welvet::parallel::Combine::Concat:
+      case welvet::parallel::Combine::Add:
+      case welvet::parallel::Combine::Avg:
+      case welvet::parallel::Combine::Filter:
+      case welvet::parallel::Combine::Max:
+      case welvet::parallel::Combine::SparseK:
+      case welvet::parallel::Combine::Disagree:
+        break;
+      default:
+        std::fprintf(stderr, "welvet_dense_fwd: parallel train unknown combine %d\n", combine_i);
+        return 1;
+    }
+  }
+  int wn = branches * out_feat * dim;
+  if (combine == welvet::parallel::Combine::Filter) {
+    wn += branches * dim; // gate [Branches×Dim]
+  }
+  std::vector<float> packed(static_cast<std::size_t>(wn));
+  if (!read_exact(packed.data(), packed.size())) return 2;
+  std::vector<float> x(static_cast<std::size_t>(batch * dim));
+  const int out_d = (combine == welvet::parallel::Combine::Concat) ? branches * out_feat : out_feat;
+  std::vector<float> tgt(static_cast<std::size_t>(batch * out_d));
+  if (!read_exact(x.data(), x.size()) || !read_exact(tgt.data(), tgt.size())) return 2;
+  double lr = 0.0;
+  if (!read_exact(&lr, 1)) return 2;
+  std::vector<int32_t> modes(static_cast<std::size_t>(branches));
+  if (!read_exact(modes.data(), modes.size())) return 2;
+  double shadow_coef = 0.0, surprise_thresh = 0.0;
+  if (!read_exact(&shadow_coef, 1) || !read_exact(&surprise_thresh, 1)) return 2;
+  for(int m:modes)if(m!=0&&m!=1){std::fprintf(stderr,"PNB1: only Inherit/NormalBP supported\n");return 1;}
+  welvet::parallel::Config cfg;
+  cfg.dim = dim;
+  cfg.out_feat = out_feat;
+  cfg.branches = branches;
+  cfg.combine = combine;
+
+  welvet::TensorF32 xin, target;
+  xin.shape = {batch, dim};
+  xin.data = x;
+  target.shape = {batch, out_d};
+  target.data = tgt;
+
+  double loss=0;welvet::parallel::Layer layer;
+  auto once=[&]()->welvet::Status{if(auto st=welvet::parallel::new_configured(cfg,static_cast<welvet::DType>(dtype),packed.data(),&layer);!st)return st;return train_parallel(layer,xin,target,lr,&loss);};
+
+  if (bench_iters > 0) {
+    for (int i = 0; i < 2; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < bench_iters; ++i) {
+      auto st = once();
+      if (!st) {
+        std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+        return 1;
+      }
+    }
+    const auto t1 = std::chrono::steady_clock::now();
+    const int64_t ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    const int32_t iters32 = static_cast<int32_t>(bench_iters);
+    if (!write_exact("WVB1", 4) || !write_exact(&ns, 1) || !write_exact(&iters32, 1)) return 2;
+  } else {
+    auto st = once();
+    if (!st) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+
+  if (!write_magic(out_magic) || !write_exact(&loss, 1) || !write_exact(&branches, 1)) return 2;
+  for (int i = 0; i < branches; ++i) {
+    auto* d = welvet::parallel::dense_branch(layer, i);
+    if (!d) {
+      std::fprintf(stderr, "welvet_dense_fwd: cameral train expects Dense branches\n");
+      return 1;
+    }
+    const int32_t nw = out_feat * dim;
+    std::vector<float> Wa(static_cast<std::size_t>(nw));
+    auto est = d->weights.export_f32(Wa.data());
+    if (!est) {
+      std::fprintf(stderr, "welvet_dense_fwd: %s\n", est.message.c_str());
+      return 1;
+    }
+    if (!write_exact(&nw, 1) || !write_exact(Wa.data(), Wa.size())) return 2;
+  }
+  return 0;
+}
+
+// Generic NormalBP leaf wire. Includes all intermediate gradients and packed
+// weights, so composition tests verify routing and gates independently of SGD.
+int write_cnn_nbp_leaf_out(const char*, const std::vector<float>&,
+                          const std::vector<float>&, const std::vector<float>&,
+                          const std::vector<float>&, const std::vector<float>&, double);
+int run_normalbp_child(int bench_iters) {
+  ChildReader initial;
+  welvet::stack::Child child;
+  if (!read_child(initial, &child)) return 2;
+  auto read_tensor = [](welvet::TensorF32* out) {
+    int32_t rank = 0;
+    if (!read_exact(&rank, 1) || rank <= 0 || rank > 8) return false;
+    std::vector<int32_t> shape(rank);
+    if (!read_exact(shape.data(), shape.size())) return false;
+    size_t count = 1;
+    for (int d : shape) {
+      if (d <= 0 || count > size_t(1 << 26) / d) return false;
+      count *= d;
+    }
+    out->shape.assign(shape.begin(), shape.end());
+    out->data.resize(count);
+    return read_exact(out->data.data(), count);
+  };
+  welvet::TensorF32 input, target, pre, post, dx, dw;
+  if (!read_tensor(&input) || !read_tensor(&target)) return 2;
+  double lr = 0, loss = 0;
+  if (!read_exact(&lr, 1)) return 2;
+  auto once = [&]() -> welvet::Status {
+    ChildReader replay(&initial.bytes);
+    child = welvet::stack::Child{};
+    if (!read_child(replay, &child)) return welvet::Status::Gap("NormalBP child replay");
+    if (auto st = welvet::stack::child_forward(child, input, &pre, &post); !st) return st;
+    if (auto st = welvet::runtime::training::mse(post, target, &loss); !st) return st;
+    welvet::TensorF32 gy;
+    if (auto st = welvet::runtime::training::mse_grad(post, target, &gy); !st) return st;
+    if (auto st = welvet::stack::child_backward(child, gy, input, pre, &dx, &dw); !st) return st;
+    return welvet::stack::child_apply_sgd(&child, dw, lr);
+  };
+  const auto begin = std::chrono::steady_clock::now();
+  for (int i = 0; i < (bench_iters > 0 ? bench_iters : 1); ++i) {
+    if (auto st = once(); !st) {
+      std::fprintf(stderr, "NormalBP child: %s\n", st.message.c_str());
+      return 1;
+    }
+  }
+  if (bench_iters > 0) {
+    int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - begin).count();
+    int32_t iters = bench_iters;
+    if (!write_magic("WVB1") || !write_exact(&ns, 1) || !write_exact(&iters, 1)) return 2;
+  }
+  std::vector<float> weights(welvet::stack::child_grad_w_size(child));
+  if (auto st = welvet::stack::child_export_f32(child, weights.data()); !st) return 1;
+  return write_cnn_nbp_leaf_out("NBLO", pre.data, post.data, dx.data, dw.data, weights, loss);
 }

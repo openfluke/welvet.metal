@@ -337,14 +337,22 @@ WELVET_API welvet_status welvet_mamba_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
     double* loss);
 
-/* KMeans soft assignment — WKM1 wire. Centers FormatNone×34 decode_row_f64 + host f64 softMax.
+/* KMeans soft assignment — WKM1 wire. Centers FormatNone×34, Metal soft assignment kernels.
  * output_mode: 0=probabilities (K), 1=features (D). */
 WELVET_API welvet_status welvet_kmeans_forward_f32(
     int32_t n, int32_t feature_dim, int32_t num_clusters, int32_t output_mode, int32_t act,
     double temperature, int32_t dtype, int32_t backend, int32_t rank, const int32_t* shape,
     const float* W, const float* x, float* pre, float* post);
 
-/* Parallel Dense branches — WPL1 wire. Soft-double Dense FormatNone×34 + host combine.
+/* Metal NormalBP; use_target=1 computes MSE; otherwise consumes gradOut.
+ * dW/W_after use the packed forward weight layout; dX uses input layout. */
+WELVET_API welvet_status welvet_kmeans_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t num_clusters, int32_t feature_dim, int32_t output_mode,
+    int32_t act, double temperature, int32_t dtype, int32_t backend, const float* W, const float* x,
+    const float* grad_or_target, int32_t use_target, double lr, float* pre, float* post, float* dX,
+    float* dW, float* W_after, double* loss);
+
+/* Parallel Dense branches — WPL1 wire. Soft-double Dense FormatNone×34 + Metal combine/routing.
  * combine: 0 concat,1 add,2 avg,3 filter,4 max,5 sparsek,6 disagree.
  * packed: Branches×[OutFeat×Dim] (+ Gate[Branches×Dim] if filter).
  * x: [batch*seq*dim]; pre=x copy; post=[batch*seq*OutDim]. */
@@ -352,6 +360,14 @@ WELVET_API welvet_status welvet_parallel_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t out_feat, int32_t branches, int32_t combine,
     int32_t sparse_k, int32_t dtype, int32_t backend, double disagree_beta, const float* packed,
     const float* x, float* pre, float* post);
+
+/* Metal NormalBP; use_target=1 computes MSE; otherwise consumes gradOut.
+ * dW/W_after use the packed forward weight layout; dX uses input layout. */
+WELVET_API welvet_status welvet_parallel_normalbp_f32(
+    int32_t batch, int32_t seq, int32_t dim, int32_t out_feat, int32_t branches, int32_t combine,
+    int32_t sparse_k, int32_t dtype, int32_t backend, double disagree_beta, const float* packed,
+    const float* x, const float* grad_or_target, int32_t use_target, double lr, float* pre,
+    float* post, float* dX, float* dW, float* W_after, double* loss);
 
 /* Metacognition — WMC1 wire. Observed Dense soft-double Dim×Dim FormatNone×34 + host rules.
  * packed: Observed [Dim×Dim]. DefaultStabilityRules when empty. */

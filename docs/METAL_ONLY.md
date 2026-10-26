@@ -16,7 +16,7 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   parity is not promised for arbitrary data.
 - NormalBP forward/backward: Dense, RMSNorm, LayerNorm, SwiGLU, Softmax,
   Embedding, MHA, CNN1/2/3, ConvT1/2/3, RNN, LSTM, Sequential, Residual,
-  Mamba, Metacognition, GDN and Stack use Metal numerical kernels.
+  KMeans, Mamba, Metacognition, GDN, Parallel and Stack use Metal numerical kernels.
 - SGD and native encoding: Metal arithmetic and native FormatNone storage updates
   across all 34 dtypes. Float32 rounds the update step before subtraction to follow
   Go's semantics; other dtypes retain their native encoding. Bias updates also run
@@ -58,7 +58,7 @@ native artifact and C ABI. There is no dependency from one backend to the other.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
   Promoted reductions and transcendentals use float2 before rounding to Float32.
 
-**Validated 2026-10-26:** all 17 NormalBP evidence sections / 128 case checks pass,
+**Validated 2026-10-26:** all 19 NormalBP evidence sections / 219 case groups pass,
 including supported dtype loops, leaves, chains and volumes. Exact bits are
 required where specified, with a finite loss band of
 `1e-12 * max(1, abs(reference))`. Weight comparisons permit FP32 subnormal
@@ -67,8 +67,20 @@ cases retain their ≥strict gradient floor; Softmax retains ≥loose, and GDN
 retains ≥loose leaf / ≥industry volume. Stack binary 211 retains its existing
 post-only `1e-18` allowance. See [the checklist](TRAINING_CHECKLIST.md) for status.
 
-KMeans and Parallel NormalBP remain unsupported. Other training modes need their
-own validation; NormalBP sign-off does not transfer to them. No build flag or
+KMeans computes distances, assignment softmax, reconstruction and complete
+NormalBP gradients on Metal. Both output modes have ×34 evidence. Its only
+additional allowance is finite near-zero input-gradient cancellation: both
+values must have magnitude ≤`1e-12` and differ by ≤`1e-14`. Other tensor gates
+remain exact and loss uses the common finite band.
+
+Parallel supports polymorphic/nested branches and all seven combine modes.
+Direct pre/post/dX/dW/SGD checks cover each combine ×34, including Filter gate
+updates and rank-3 inputs. Metal preserves promoted branch-input accumulation,
+Avg backward scaling, deterministic Max/SparseK ties and Go arm64 Disagree FMA
+rounding. Host branch loops only schedule kernels and stage buffers.
+
+Other training modes need their own KMeans/Parallel validation; NormalBP
+sign-off does not transfer to them. No build flag or
 runtime setting enables a CPU numerical fallback.
 
 Host code handles allocation, validation, graph scheduling, tensor copies, storage

@@ -1,4 +1,5 @@
 #include "welvet/stack.hpp"
+#include "welvet/parallel.hpp"
 
 #include <string>
 #include <utility>
@@ -6,12 +7,17 @@
 namespace welvet::stack {
 namespace {
 
-Status parallel_gap() {
-  return Status::Gap("stack: Parallel-as-branch not yet on Metal");
-}
-
-Status kmeans_gap() {
-  return Status::Gap("stack: KMeans child NormalBP not yet on Metal");
+template<class F> Status with_parallel(Child& child, F fn) {
+  parallel::Layer layer;
+  const auto& cfg = child.parallel_nest;
+  layer.cfg = {cfg.dim, cfg.out_feat, int(child.nested.size()), parallel::Combine(cfg.combine),
+               cfg.seq_len, cfg.sparse_k, cfg.disagree_beta};
+  layer.branches = std::move(child.nested);
+  if (cfg.has_gate) layer.gate = std::move(child.dense_op);
+  const auto st = fn(layer);
+  child.nested = std::move(layer.branches);
+  if (cfg.has_gate) child.dense_op = std::move(*layer.gate);
+  return st;
 }
 
 } // namespace
@@ -91,7 +97,7 @@ Status child_forward(Child& c, const TensorF32& input, TensorF32* pre, TensorF32
     return st;
   }
   case Kind::Parallel:
-    return parallel_gap();
+    return with_parallel(c,[&](parallel::Layer& l){return parallel::forward(l,input,pre,post);});
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child kind");
   }
@@ -144,7 +150,7 @@ Status child_backward(Child& c, const TensorF32& grad_out, const TensorF32& inpu
   case Kind::GDN:
     return gdn::backward_f32(c.gdn_op, grad_out, input, pre, grad_in, grad_w);
   case Kind::KMeans:
-    return kmeans_gap();
+    return kmeans::backward_f32(c.kmeans_op, grad_out, input, pre, grad_in, grad_w);
   case Kind::NestedStack: {
     Layer tmp;
     tmp.children = std::move(c.nested);
@@ -153,7 +159,7 @@ Status child_backward(Child& c, const TensorF32& grad_out, const TensorF32& inpu
     return st;
   }
   case Kind::Parallel:
-    return parallel_gap();
+    return with_parallel(c,[&](parallel::Layer& l){return parallel::backward_f32(l,grad_out,input,pre,grad_in,grad_w);});
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child bwd");
   }
@@ -208,7 +214,7 @@ Status child_apply_sgd(Child* c, const TensorF32& dW, double lr) {
   case Kind::GDN:
     return gdn::apply_grad_sgd(&c->gdn_op, dW, lr);
   case Kind::KMeans:
-    return kmeans_gap();
+    return kmeans::apply_grad_sgd(&c->kmeans_op, dW, lr);
   case Kind::NestedStack: {
     Layer tmp;
     tmp.children = std::move(c->nested);
@@ -217,7 +223,7 @@ Status child_apply_sgd(Child* c, const TensorF32& dW, double lr) {
     return st;
   }
   case Kind::Parallel:
-    return parallel_gap();
+    return with_parallel(*c,[&](parallel::Layer& l){return parallel::apply_grad_sgd(&l,dW,lr);});
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child sgd");
   }
@@ -266,7 +272,7 @@ int child_grad_w_size(const Child& c) {
   case Kind::GDN:
     return gdn::grad_w_size(c.gdn_op);
   case Kind::KMeans:
-    return 0;
+    return kmeans::grad_w_size(c.kmeans_op);
   case Kind::NestedStack: {
     int n = 0;
     for (const auto& ch : c.nested) {
@@ -338,7 +344,7 @@ Status child_export_f32(const Child& c, float* dst) {
   case Kind::GDN:
     return gdn::export_packed_f32(c.gdn_op, dst);
   case Kind::KMeans:
-    return kmeans_gap();
+    return kmeans::export_packed_f32(c.kmeans_op, dst);
   case Kind::NestedStack: {
     int off = 0;
     for (const auto& ch : c.nested) {

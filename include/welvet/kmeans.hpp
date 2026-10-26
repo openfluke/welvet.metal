@@ -34,7 +34,13 @@ struct Layer {
 // init: flat [K×D] f32 (packed into FormatNone dtype).
 Status new_configured(const Config& cfg, DType dt, const float* init_or_null, Layer* out);
 
-// Soft assignment host f64 (Go/cpp exact_bit). Centers via decode_row_f64 FormatNone×34.
+// Metal soft assignments and NormalBP; host code only stages buffers.
 Status forward(const Layer& layer, const TensorF32& input, TensorF32* pre, TensorF32* post);
+
+int grad_w_size(const Layer& layer);
+Status backward_f32(const Layer& layer, const TensorF32& grad_out, const TensorF32& input,
+                    const TensorF32& pre, TensorF32* grad_in, TensorF32* grad_w);
+Status apply_grad_sgd(Layer* layer, const TensorF32& grad_w, double lr);
+Status export_packed_f32(const Layer& layer, float* dst);
 
 } // namespace welvet::kmeans
