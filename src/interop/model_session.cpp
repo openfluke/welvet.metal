@@ -388,6 +388,93 @@ welvet_status welvet_model_forward(welvet_model_session *s,
     blob(w, out);
   });
 }
+// Segment APIs are additive to model ABI 1. They never compute a local loss.
+welvet_status welvet_model_forward_pair(welvet_model_session *s,
+    const uint8_t *data, size_t size, welvet_metal_blob *out) {
+  return guarded([&] {
+    require(s && data && out, "invalid segment forward arguments");
+    std::lock_guard<std::mutex> lock(s->mu);
+    require(s->root != 2, "segment forward expects Stack or Parallel");
+    Reader r{data, size}; auto x = tensor(r); r.end();
+    TensorF32 pre, post;
+    good(s->root == 0 ? stack::forward(s->stack, x, &pre, &post)
+                      : parallel::forward(s->parallel, x, &pre, &post));
+    Writer w; tensor_out(w, pre); tensor_out(w, post); blob(w, out);
+  });
+}
+welvet_status welvet_model_backward(welvet_model_session *s,
+    const uint8_t *data, size_t size, welvet_metal_blob *out) {
+  return guarded([&] {
+    require(s && data && out, "invalid segment backward arguments");
+    std::lock_guard<std::mutex> lock(s->mu);
+    require(s->root != 2, "segment backward expects Stack or Parallel");
+    Reader r{data, size}; auto x = tensor(r), gy = tensor(r); r.end();
+    TensorF32 pre, post, gx, dw;
+    good(s->root == 0 ? stack::forward(s->stack, x, &pre, &post)
+                      : parallel::forward(s->parallel, x, &pre, &post));
+    require(gy.shape == post.shape && gy.data.size() == post.data.size(),
+            "segment output gradient shape mismatch");
+    good(s->root == 0 ? stack::backward_f32(s->stack, gy, x, pre, &gx, &dw)
+                      : parallel::backward_f32(s->parallel, gy, x, pre, &gx, &dw));
+    if (dw.shape.empty()) dw.shape = {int(dw.data.size())};
+    Writer w; tensor_out(w, gx); tensor_out(w, dw); blob(w, out);
+  });
+}
+welvet_status welvet_model_train_credit(welvet_model_session *s, int32_t mode,
+    double lr, const uint8_t *data, size_t size) {
+  return guarded([&] {
+    require(s && data && mode >= 0 && mode <= 33 && std::isfinite(lr), "invalid credit arguments");
+    std::lock_guard<std::mutex> lock(s->mu);
+    require(s->root != 2, "credit expects Stack or Parallel");
+    Reader r{data, size}; auto x=tensor(r), gy=tensor(r); TensorF32 pre, post;
+    int present=r.one<int32_t>();require(present==0 || present==1,"invalid pre flag");
+    if(present)pre=tensor(r);r.end();
+    if (train_mode_is_frozen(TrainMode(mode))) return;
+    if (!present) good(s->root==0 ? stack::forward(s->stack,x,&pre,&post)
+                                 : parallel::forward(s->parallel,x,&pre,&post));
+    if (s->root==1) {
+      good(runtime::cameral_train::train_parallel(s->parallel,gy,x,pre,TrainMode(mode),lr));
+      return;
+    }
+    stack::Child c; c.kind=stack::Kind::NestedStack;
+    c.nested=std::move(s->stack.children);c.controls=std::move(s->stack.controls);c.accel=std::move(s->stack.accel);
+    auto restore=[&]{s->stack.children=std::move(c.nested);s->stack.controls=std::move(c.controls);s->stack.accel=std::move(c.accel);};
+    Status st;
+    try {TensorF32 gx;st=runtime::cameral_train::train_child(c,gy,x,pre,post,TrainMode(mode),lr,&gx);}
+    catch(...){restore();throw;}
+    restore();good(st);
+  });
+}
+welvet_status welvet_model_dense_proxy(welvet_model_session *s, int32_t kind,
+    const uint8_t *data, size_t size, welvet_metal_blob *out) {
+  return guarded([&] {
+    require(s && data && out && kind >= 0 && kind <= 1, "invalid Dense proxy arguments");
+    std::lock_guard<std::mutex> lock(s->mu);
+    require(s->root == 0 && s->stack.children.size() == 1 &&
+            s->stack.children[0].kind == stack::Kind::Dense, "proxy expects one Dense");
+    Reader r{data, size}; auto x = tensor(r), gy = tensor(r); TensorF32 pre, result;
+    int present = r.one<int32_t>(); require(present == 0 || present == 1, "invalid pre flag");
+    if (present) pre = tensor(r); r.end();
+    auto &d = s->stack.children[0].dense_op;
+    good(kind == 0 ? dense::linear_grad_in(d, gy, x, &result)
+                   : dense::grad_w_only(d, gy, x, pre, &result));
+    Writer w; tensor_out(w, result); blob(w, out);
+  });
+}
+welvet_status welvet_model_apply_sgd(welvet_model_session *s, double lr,
+    const uint8_t *data, size_t size) {
+  return guarded([&] {
+    require(s && data && std::isfinite(lr), "invalid segment SGD arguments");
+    std::lock_guard<std::mutex> lock(s->mu);
+    require(s->root != 2, "segment SGD expects Stack or Parallel");
+    Reader r{data, size}; auto dw = tensor(r); r.end();
+    const int n = s->root == 0 ? stack::grad_w_size(s->stack)
+                             : parallel::grad_w_size(s->parallel);
+    require(dw.data.size() == size_t(n), "segment weight gradient size mismatch");
+    good(s->root == 0 ? stack::apply_grad_sgd(&s->stack, dw, lr)
+                      : parallel::apply_grad_sgd(&s->parallel, dw, lr));
+  });
+}
 welvet_status welvet_model_train_mse(welvet_model_session *s, int32_t mode,
                                      double lr, int32_t ticks,
                                      const uint8_t *data, size_t size,

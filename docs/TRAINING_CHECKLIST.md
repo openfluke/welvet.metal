@@ -2069,3 +2069,19 @@ unreleased validation and checked tables above describe current Metal evidence.
 | `0.02-m2-dense-nbp` | Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 1×1×1×1 / chain / ×34 / 2×2×2×1 / 2×1×1×1×34 exact_bit (`WDB1`/`WVN1`) |
 | — | Checklist opened. Forward volume FormatNone×34 largely done; training port not started. |
 
+
+
+## Mixed Go / C++ / Metal routing — sign-off evidence
+
+- [x] JSON `metal` resolves to a real Metal backend; no silent Go fallback.
+- [x] Explicit per-child placements survive Stack/Parallel inheritance.
+- [x] Incoming global gradients, dInput/dWeights and native SGD cross segment boundaries.
+- [x] Dense proxy primitives use Metal when their layer is assigned Metal.
+- [x] 13-layer Go 0–3 → C++ 4–8 → Metal 9–12 forward/backward/update comparison.
+- [x] Grid (0,0,0), (1,1,1), (2,2,2) placement and existing remote-link semantics.
+- [x] Routed backward/SGD for all 23 baseline families over supported native dtypes (GDN Float32).
+- [x] Persistent homogeneous MSE mode delegation and mixed Go/C++/Metal local training modes.
+- [x] Routed weights return automatically for Go execution/saving; explicit sessions keep explicit SyncToGo.
+- [x] Router lifecycle, missing-library errors and pending C++ parameter handoff.
+
+Run `./scripts/macos_build_w2a.sh --go-routing`; see [GO_INTEGRATION.md](GO_INTEGRATION.md).

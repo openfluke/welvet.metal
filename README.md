@@ -18,7 +18,8 @@ A `1 × 1 × 1` volume is the ordinary single-cell neural-network case (layers i
 It runs directly from C++ and through a C ABI. Go Welvet can mount supported
 models through `nativemetal.Session`, train on Metal and explicitly synchronize
 parameters back for Go saving. [Build, ownership and usage](docs/GO_INTEGRATION.md).
-General NAC/backend-planner selection and native model/IO remain separate gates.
+Explicit JSON/Exec.Backend placement now supports mixed Go/C++/Metal execution.
+Automatic hardware planning and native model/IO remain separate gates.
 
 | | |
 |--|--|
@@ -105,7 +106,7 @@ Go is the parity reference. Metal owns its own topology, model state, numerical 
 ### Architecture sketch — intended flow
 
 ```text
-C++ application / CLI                 Go Welvet or w2a / future NAC
+C++ application / CLI                 Go Welvet or w2a / explicit JSON routing
           |                                       |
      C++ engine API                          stable C ABI
           |                                       |
@@ -617,7 +618,8 @@ workloads. Persistent graph/tape residency and fusion remain separate gates.
 | All layer NormalBP magics (mirror welvet.cpp names) | ✅ w2a wire tool |
 | Volume / Step / Mesh / Tween* magics | ✅ w2a wire tool |
 | Explicit Go Metal session + independent library loading | ✅ `-tags welvet_metal` removes CPU sibling linkage |
-| General Go NAC / Exec.Backend planner auto-selects Metal | ⬜ |
+| Explicit Go JSON / Exec.Backend Metal placement, cross-backend gradients and SGD | ✅ `EnableRouting`; w2a mixed-chain/grid/dtype tests |
+| Automatic hardware/performance-based backend selection | ⬜ |
 
 Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ exceptions through C, explicit ownership, async inputs owned/copied, provenance in traces.
 

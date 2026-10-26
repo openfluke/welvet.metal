@@ -235,6 +235,7 @@ A generic LLVM installation alone does not replace the Apple SDK. A distributed
 prebuilt backend should remove the need for end users to build CMake sources;
 Go's `nativemetal` binding now loads the packaged library and owns persistent
 mounted sessions with explicit native parameter return. Go ENTITY saving after
-pull is verified. General NAC/Exec.Backend auto-selection, native checkpoints
+pull is verified. Explicit JSON/Exec.Backend dispatch is available with EnableRouting; automatic
+hardware selection, native checkpoints
 and clean-environment release distribution remain separate gates. See
 [GO_INTEGRATION.md](GO_INTEGRATION.md).

@@ -22,6 +22,7 @@ for arg in "$@"; do
     --training-all) MODE="training_all" ;;
     --cameral-all) MODE="cameral_all" ;;
     --go-integration) MODE="go_integration" ;;
+    --go-routing) MODE="go_routing" ;;
     --training-25-29-all) MODE="training_25_29_all" ;;
     --training-11-24-all) MODE="training_11_24_all" ;;
     --step-tween-all) MODE="step_tween_all" ;;
@@ -58,6 +59,7 @@ for arg in "$@"; do
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
       echo "all 29 modes: --training-all (full training checklist + GPU-only guards)"
+      echo "Mixed Go/C++/Metal JSON routing: --go-routing (requires C++ artifact; normal build)"
       echo "Go FFI: --go-integration (install binary, all layers/modes/mesh, weight sync + ENTITY save/reload)"
       echo "Cameral: --cameral-all (Freeze/Shadow/Adversarial/Memory, mixed branches, CamSync + GPU-only guards)"
       echo "sections 25–29: --training-25-29-all (five remaining Line modes + shared proxy volumes + guards)"
@@ -71,6 +73,14 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "$MODE" == "go_routing" ]]; then
+  "$ROOT/scripts/macos_install_go.sh"
+  export WELVET_REQUIRE_CPP_ROUTING=1
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoNativeMetal.*|TestGoVMetalOnly)$' -timeout 25m
+  exit 0
+fi
 
 if [[ "$MODE" == "go_integration" ]]; then
   "$ROOT/scripts/macos_install_go.sh"

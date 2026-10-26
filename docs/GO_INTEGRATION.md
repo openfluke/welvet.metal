@@ -1,4 +1,4 @@
-# Go integration: mounted Metal models
+# Go integration: mounted models and mixed backend routing
 
 The native artifact is `libwelvet_metal.dylib`. Go Welvet's `nativemetal`
 package loads it through a versioned C ABI. No Go pointers are retained by C++.
@@ -82,10 +82,10 @@ go build -tags welvet_metal ./cmd/your-app
 
 The tag disables the independent `nativecpp` cgo binding while retaining Go's
 explicit CPU implementations. Without it, the existing Go CPU-native binding
-retains its original build behavior and may link the CPU sibling. This is an
-explicit `nativemetal.Session` API; setting a layer's existing `Exec.Backend`
-field does not automatically route arbitrary calls through this session.
-General backend-planner/NAC auto-selection remains separate work.
+retains its original build behavior and may link the CPU sibling. Enable `nativemetal.EnableRouting()` to connect `Exec.Backend` and the existing
+JSON configuration to persistent Metal mounts. Explicit `Mount` sessions remain
+available independently. Automatic hardware choice/performance planning remains
+separate from explicit JSON placement.
 
 Library resolution order is an explicit `Options{LibraryPath: ...}`, then
 `WELVET_METAL_LIBRARY`, then `libwelvet_metal.dylib` beside the executable, then
@@ -130,7 +130,7 @@ or rule counters. Close/remount does not preserve those transient states.
 
 Descriptor v1 permits up to 4096 nodes/cells, depth 64, a 256 MiB mount message,
 and the existing per-payload limits. Full persistent GPU graph/tape residency,
-large-model packaging/performance and automatic dispatch remain open.
+large-model packaging/performance and automatic hardware selection remain open.
 
 ## ABI ownership and wire layout
 
@@ -173,3 +173,88 @@ replay retain exact checks. Run all of it from the Metal checkout:
 ```sh
 ./scripts/macos_build_w2a.sh --go-integration
 ```
+
+## Mixed Go / C++ / Metal execution
+
+```go
+router, err := nativemetal.EnableRouting() // optionally Options{LibraryPath: ...}
+if err != nil { return err }
+defer router.Close()
+
+cfg, err := nativecpp.ParseExecConfigJSON(jsonBytes)
+if err != nil { return err }
+if err = placement.Stack(model, cfg, "main", "0,0,0,0"); err != nil { return err }
+// Existing public execution/training APIs now dispatch the assigned operations.
+loss, err := parallel.TrainStackMSE(model, input, target, parallel.ModeNormalBP, 0.001)
+```
+
+`placement` is `github.com/openfluke/welvet/runtime/placement`. For a Stack,
+JSON `layers` keys are zero-based immediate child indices. A nested Stack can
+be assigned as a segment. For example, default `go_cpu`, child indices 4–8
+assigned `native_cpu`, and 9–12 assigned `metal` execute in that order under
+Go's graph scheduler. Explicit child assignments survive parent propagation.
+For a Grid, `placement.Grid(grid, cfg, "main")` uses sector keys `"z,y,x,0"`
+and layer keys `"L"`. Existing remote links control activation sources;
+backend assignments control execution. Routing does not create connections.
+The existing Go backward remote-link convention is preserved: gradients enter
+local tape inputs and are not newly accumulated onto remote targets.
+
+Each assigned Metal operation uses a persistent native session. Forward pre/post,
+incoming output gradients, input gradients, weight gradients, SGD, Dense proxy
+primitives, and homogeneous Stack/Parallel credit/MSE training cross the C ABI.
+Float32 activation/gradient tensors and the existing mounted-model/dtype limits
+apply; unsupported models, missing libraries or missing segment symbols fail
+explicitly. Selecting Metal without an enabled router fails rather than running
+Go CPU. Routing statistics expose completed native calls.
+
+Go orchestrates mixed graph scheduling, losses and cross-backend tensor transfer.
+The assigned Metal forward/backward/SGD/proxy kernels run on Apple GPU. This is
+not a fully resident heterogeneous graph: activations and gradients cross host
+buffers. Whole Stack/Parallel MSE delegation retains native Line/proxy state;
+mixed-mode scheduling follows the existing Go implementation.
+
+Routed native updates automatically replace the corresponding Go parameters,
+so subsequent Go execution, backend changes and Go ENTITY saving see current
+values. Pending C++ parameter updates are pulled before a routed Metal mount.
+Changes made directly in Go are detected and remount the affected operation;
+remounting resets that operation's native transient state. Backend changes
+transfer parameters; live Line/proxy/KV/rule state is not migrated between
+different engines. Do not mutate, replace
+or concurrently execute/save the same Go graph while a routed call uses it.
+Close the router to release every cached mount. Explicit `Mount` sessions still
+require explicit `SyncToGo`; their ownership contract is unchanged.
+
+Use the **normal build** for simultaneous C++ and Metal. The `welvet_metal` tag
+intentionally disables C++ and is appropriate for Go/Metal-only programs.
+Linux/Windows ordinary Go builds do not load Apple libraries. `EnableRouting`
+is opt-in and requires Apple silicon macOS/cgo.
+
+A runnable 13-layer example, with optional JSON configuration and Go ENTITY save:
+
+```sh
+cd ../welvet
+go run ./cmd/welvet-metal-routing-example -save /tmp/welvet-mixed.entity
+```
+
+Full verification including the existing session/mesh/ownership tests:
+
+```sh
+cd /Users/openfluke/gs/welvet.metal
+./scripts/macos_build_w2a.sh --go-routing
+```
+
+The mixed suite requires an available C++ artifact and does not accept silently
+skipping that backend. It covers a 13-layer Go→C++→Metal chain, grid coordinates
+and remote links, backward/SGD for all 23 layer families over supported native
+dtypes, persistent mode delegation, mixed local training modes, pinned overrides,
+C++ pending weight handoff, missing-library/closed-router errors and explicit
+session ownership. All tests reside in w2a.
+
+Sign-off on Apple M5: the full `--go-routing` command passed in 109.612 seconds;
+the expanded routing checks (including nested Sequential/Residual overrides and
+direct credit training) passed under the Go race detector in 7.527 seconds.
+Existing Go core/nativecpp/layer/runtime regressions passed. The standalone mixed
+example trained and wrote a Go ENTITY file. A repository-wide `go build ./...`
+is independently blocked by the pre-existing mosstts dumper importing an
+external `go-sentencepiece/internal/model` package; routing packages and the
+mixed example build successfully.
