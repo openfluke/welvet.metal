@@ -7936,7 +7936,7 @@ int run_kmeans_normalbp(int bench_iters) {
   return write_cnn_nbp_leaf_out("KMBO",pre,post,dX,dW,W_after,loss);
 }
 
-int run_volume_kmeans_normalbp(int bench_iters) {
+int run_volume_kmeans_normalbp(int bench_iters, VolumeTrainMode mode) {
   int32_t depth = 0, rows = 0, cols = 0, lpc = 0, batch = 0, backend = 0, n_links = 0;
   if (!read_exact(&depth, 1) || !read_exact(&rows, 1) || !read_exact(&cols, 1) ||
       !read_exact(&lpc, 1) || !read_exact(&batch, 1) || !read_exact(&backend, 1) ||
@@ -8045,6 +8045,12 @@ int run_volume_kmeans_normalbp(int bench_iters) {
       if (!st) return st;
     }
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::Tween) {
+      bwd = {};
+      return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
+    }
+    if (mode == VolumeTrainMode::TweenChain)
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 
@@ -8091,11 +8097,11 @@ int run_volume_kmeans_normalbp(int bench_iters) {
     }
     Ws.push_back(std::move(Wa));
   }
-  return write_cnn_vol_nbp_out("KMVO", loss, bwd, fwd, Ws);
+  return write_cnn_vol_nbp_out(mode==VolumeTrainMode::Tween?"KMTO":mode==VolumeTrainMode::TweenChain?"KMCO":"KMVO", loss, bwd, fwd, Ws);
 }
 
-int run_volume_parallel_normalbp(int bench_iters) {
-  const char* short_hdr="PNV1";const char* out_magic="PNVO";
+int run_volume_parallel_normalbp(int bench_iters, VolumeTrainMode mode) {
+  const char* short_hdr="PNV1";const char* out_magic=mode==VolumeTrainMode::Tween?"PNTO":mode==VolumeTrainMode::TweenChain?"PNCO":"PNVO";
   int32_t depth = 0, rows = 0, cols = 0, lpc = 0, batch = 0, backend = 0, n_links = 0;
   if (!read_exact(&depth, 1) || !read_exact(&rows, 1) || !read_exact(&cols, 1) ||
       !read_exact(&lpc, 1) || !read_exact(&batch, 1) || !read_exact(&backend, 1) ||
@@ -8195,6 +8201,12 @@ int run_volume_parallel_normalbp(int bench_iters) {
       if (!st) return st;
     }
     if (auto st = welvet::runtime::forward::volume_dense(g, input, &fwd); !st) return st;
+    if (mode == VolumeTrainMode::Tween) {
+      bwd = {};
+      return welvet::systems::tween::train_volume_mse(g, fwd, target, lr, &loss);
+    }
+    if (mode == VolumeTrainMode::TweenChain)
+      return welvet::systems::tween_chain::train_volume_mse(g, fwd, target, lr, &loss, &bwd);
     return welvet::runtime::training::step_dense(g, fwd, target, lr, &loss, &bwd);
   };
 

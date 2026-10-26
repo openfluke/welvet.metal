@@ -18,6 +18,7 @@ echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
 MODE=""
 for arg in "$@"; do
   case "$arg" in
+    --step-tween-all) MODE="step_tween_all" ;;
     --normalbp-all) MODE="normalbp_all" ;;
     --metal-only) MODE="metal_only" ;;
     --dense-train) MODE="dense_train" ;;
@@ -50,6 +51,7 @@ for arg in "$@"; do
     --tween-train) MODE="tween_train" ;;
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
+      echo "training modes 2–6: --step-tween-all (complete NormalBP + five requested modes + Metal-only checks)"
       echo "training batch: --tween-next-all (eight requested modes + Metal-only checks)"
       echo "usage: $0 [--normalbp-all|--metal-only|--dense-train|…|--stack-train|--stepbp-train|--tween-train|--tweenchain-train]"
       echo "  env: CONVT=1 CNN=1 … MHA=1 for layer forward suites"
@@ -57,6 +59,12 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "$MODE" == "step_tween_all" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalNormalBP|TestGoVMetalOnly|TestGoVMetalStepBPTrain|TestGoVMetalTweenTrain|TestGoVMetalTweenChainTrain|TestGoVMetalStepTweenTrain|TestGoVMetalStepTweenChainTrain)$' -timeout 45m
+  exit 0
+fi
 
 if [[ "$MODE" == "normalbp_all" ]]; then
   # Correctness first: all cases/dtypes with one measured iteration per fixture.

@@ -128,7 +128,7 @@ const std::vector<Entry> &build() {
       {"train.normalbp.dense", "training",
        "Metal MSE/NormalBP and native FormatNone SGD across all 34 dtypes", true},
       {"runtime.step", "runtime",
-       "Metal Line BP/Tween/Split/Alt credit; 21 supported families and dtype coverage", true},
+       "Metal Line BP/Tween includes KMeans/Parallel; Split/Alt retain separate coverage", true},
       {"runtime.mesh", "runtime",
        "Metal mesh BP BPTT / last-tick Tween; Dense clock dtype parity; non-Dense clock parity open", true},
       {"train.modes.x29", "training", "gap? all 29 TrainModes + Freeze/Shadow/Adv/Memory", false},

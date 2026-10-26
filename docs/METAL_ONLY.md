@@ -79,9 +79,20 @@ updates and rank-3 inputs. Metal preserves promoted branch-input accumulation,
 Avg backward scaling, deterministic Max/SparseK ties and Go arm64 Disagree FMA
 rounding. Host branch loops only schedule kernels and stage buffers.
 
-Other training modes need their own KMeans/Parallel validation; NormalBP
-sign-off does not transfer to them. No build flag or
-runtime setting enables a CPU numerical fallback.
+KMeans and Parallel are also validated for StepBP, Tween, TweenChain,
+StepTween and StepTweenChain. Each mode adds 50 groups: both KMeans outputs
+and all seven Parallel combines ×34 in multi-hop fixtures, all 23 polymorphic
+branch kinds Float32, stateful Filter capture, and 111/chain/211 ×34 plus 222
+Float32 shared volume credit. GDN branches retain their existing ≥strict floor.
+Parallel's Tween collect tape captures every leaf and gate before applying SGD;
+its Filter forward preserves rule state transitions. All numerical operations
+remain on Metal. Shared volume credit and mesh-clock parity have separate gates.
+
+The complete `--step-tween-all` run passed 654 requested-mode groups, all 219
+NormalBP groups and the Metal-only guard. The guard also executes mesh SGD for
+KMeans/Parallel, while full Go mesh-clock parity remains separate. Other modes
+retain their own KMeans/Parallel validation gates. No build flag or runtime
+setting enables a CPU numerical fallback.
 
 Host code handles allocation, validation, graph scheduling, tensor copies, storage
 encoding/decoding, and ABI export. Training still stages tensors between kernel

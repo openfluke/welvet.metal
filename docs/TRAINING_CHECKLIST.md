@@ -22,8 +22,8 @@ Current executable contract: [METAL_ONLY.md](METAL_ONLY.md).
 | MSE / MSEGrad | Metal kernels; scalar loss is exported in IEEE float64 representation |
 | SGD and native storage updates | Metal arithmetic and native FormatNone encoding across all 34 dtypes; bias updates run on Metal too |
 | GDN | Metal Float32 truncated-BPTT; state/conv history stop-gradient |
-| Tween ModeTween | Metal block-average projection and local credit at lr×0.5; all 21 supported families / dtypes |
-| TweenChain ModeTweenChain | Metal full-lr chain-rule BP in leaves/volumes; all 21 supported families / dtypes |
+| Tween ModeTween | Metal block-average projection and local credit at lr×0.5; all 23 families / supported dtypes |
+| TweenChain ModeTweenChain | Metal full-lr chain-rule BP in leaves/volumes; all 23 families / supported dtypes |
 | Split / Alt and requested Step/Mesh variants | GPU 1/N scaling, refreshed global Alt phases, frozen Line per-hop credit, last-tick MeshTween and BPTT MeshTweenChain |
 | Scheduling and data movement | Host validation, scheduling, allocation, copies and storage staging remain |
 | Mesh gradient joins | Metal accumulation kernel; Dense mesh-clock ×34, disabled-cell and remote-link checks |
@@ -35,11 +35,17 @@ passed in `w2a` under `TestGoVMetalNormalBP`, including all dtype loops and leaf
 chain and volumetric fixtures. `TestGoVMetalOnly` also passed its primitive,
 activation/derivative, native update, cache-coherence, rejected-host-API and 13
 Float32 NormalBP/Line/Mesh smoke cases. Shared and static builds passed.
-Tween ModeTween also passes 80 case groups covering supported leaf and volume
-dtypes, plus GPU projection/nested-credit primitive checks. TweenChain adds 80
+Tween ModeTween also passes 130 case groups covering supported leaf and volume
+dtypes, plus GPU projection/nested-credit primitive checks. TweenChain passes 130
 case groups covering supported leaf/volume dtypes and true chain-rule credit.
-The eight requested Split/Alt/Line/Mesh sections add 576 case groups, plus hand-calculated credit and tiny-SGD primitive checks. These are working-tree
+The earlier eight-section Split/Alt/Line/Mesh validation covered 576 case groups, plus hand-calculated credit and tiny-SGD primitive checks. The StepTween/StepTweenChain extensions are covered by the newer combined run below. These are working-tree
 validations; no new release tag is claimed.
+
+**Sections 2–6 completed 2026-10-26:** KMeans and Parallel add 50 case groups
+to each requested mode (250 new groups). The full combined runner passed
+**654 requested-mode groups + 219 NormalBP groups + Metal-only checks** in
+538.583 seconds. StepBP has 134 groups; Tween, TweenChain, StepTween and
+StepTweenChain each have 130. Shared and static builds passed.
 
 **Precision policy:** exact tensor bits where required by each case; finite loss
 uses `abs(go-metal) <= 1e-12 * max(1, abs(go))`. NormalBP weight comparisons allow
@@ -72,7 +78,9 @@ Tick `[x]` when validated. **Ver** records a release tag when one exists, otherw
 
 **Current engine:** run `./scripts/macos_build_w2a.sh --normalbp-all` to build
 Metal and run both `TestGoVMetalNormalBP` and `TestGoVMetalOnly` in sibling `w2a`.
-The combined runner defaults to one measured benchmark iteration per fixture;
+Run `./scripts/macos_build_w2a.sh --step-tween-all` for NormalBP plus all five
+sections 2–6 and the Metal-only guard.
+The combined runners default to one measured benchmark iteration per fixture;
 set `WELVET_METAL_BENCH_ITERS=2000` for longer performance measurements.
 
 ---
@@ -377,14 +385,56 @@ Other TrainModes, full residency and throughput tuning retain separate gates.
 
 ---
 
+## w2a Go↔Metal (KMeans + Parallel, sections 2–6) — sign-off evidence
+
+Run: `./scripts/macos_build_w2a.sh --step-tween-all`.
+Cases: [`kmeans_parallel_modes.go`](../../w2a/suites/go_v_metal/kmeans_parallel_modes.go).
+Each mode adds the same 50 groups below, with fresh Go fixtures and independent
+benchmark replay. The combined suite also reruns the 219 NormalBP groups and
+`TestGoVMetalOnly`.
+
+| New evidence per mode | Groups | Status | Scope |
+|---|---:|:---:|---|
+| KMeans Probabilities / Features | 4 | [x] | Float32 and ×34; SiLU, temperature 0.7, shape-changing KMeans→Dense chain |
+| All seven Parallel combines | 14 | [x] | Float32 and ×34; three branches, Filter gate export, Concat→Dense width change |
+| Polymorphic Parallel branches | 23 | [x] | Every branch kind Float32; nested Parallel/Stack, recurrent and convolutional branches |
+| Stateful Filter collection | 1 | [x] | Metacognition rules and gate, capture-before-update semantics |
+| KMeans / Parallel volume credit | 8 | [x] | 111 / two-layer chain / 211 ×34, plus 222 Float32 for each kind |
+
+**Validated:** 2026-10-26, unreleased. StepBP/StepTween/StepTweenChain use five
+Line ticks in the multi-hop fixtures. Tween and StepTween project the global
+gap onto each trainable Parallel leaf and its gate at half lr; the collect tape
+is complete before SGD starts. Filter performs its Go-compatible extra forward,
+including stateful rule counters. TweenChain uses full-rate BP. Volume credit
+uses the same shared Forward+Step paths as the existing mode fixtures; Parallel
+volume Tween treats the cell as a local backward/update unit.
+
+Leaf wires: `STB1`/`STBO`, `TWB1`/`TWBO`, `TCB1`/`TCBO`, `STW1`/`STWO`,
+`STC1`/`STCO`. Volume wires: `KMV1`/`KMVO`, `KMTV`/`KMTO`, `KMTC`/`KMCO`,
+`PNV1`/`PNVO`, `PNTV`/`PNTO`, `PNTC`/`PNCO`. Step variants reuse their named
+parent volume credit as specified in each mode section.
+
+Native weight checks remain exact or within the existing FP32 subnormal policy;
+GDN branches retain the declared ≥strict weight floor, exact packed lengths,
+and finite loss band. Benchmark outputs must match independent fresh outputs.
+KMeans volume input gradients retain the narrow cancellation band declared
+above. GPU-only probes also exercise KMeans/Parallel mesh SGD. Full mesh-clock
+Go parity remains a separate section 7 gate. Full residency and throughput
+remain separate work.
+
+---
+
 ## w2a Go↔Metal (StepBP Line + MeshBP) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --stepbp-train`  
 Wires: `STB1`/`STBO` (Line FamilyBP); `MBP1`/`MBPO` (Dense mesh-clock FamilyBP).
-`TestGoVMetalStepBPTrain` contains **84 case groups**, including the dtype loops below.
+`TestGoVMetalStepBPTrain` contains **134 case groups**, including the dtype loops below.
 The runner also executes `TestGoVMetalOnly` and defaults to one measured iteration.
 Every forward, backward, loss, gradient join and SGD calculation uses Metal kernels;
 host code schedules ticks, stores tapes and stages buffers.
+
+KMeans / Parallel: the 50 additional groups per mode are detailed in the
+sections 2–6 extension evidence above.
 
 | Case group | Status | Evidence |
 |---|:---:|---|
@@ -403,15 +453,15 @@ host code schedules ticks, stores tapes and stages buffers.
 | Dense mesh-clock 111 / 211 / 222 Float32 | [x] | Double-buffer forward ticks, reverse-time credit and SGD |
 | Dense mesh-clock 111 / 222 ×34 | [x] | Repeated ticks and native storage updates |
 | Dense mesh-clock disabled cell + remote link | [x] | Disabled passthrough and remote gradient routing |
-| Volume 222 Float32: all 21 supported families | [x] | Shared volume Forward+Step path used by Go ModeMeshBP |
-| Volume 211 ×34: all 20 dtype-generic families | [x] | GDN is Float32-only; retains its volume ≥industry floor |
+| Volume 222 Float32: all 23 supported families | [x] | Shared volume Forward+Step path used by Go ModeMeshBP |
+| Volume 211 ×34: all 22 dtype-generic families | [x] | GDN is Float32-only; retains its volume ≥industry floor |
 | Benchmark fixture reset | [x] | Line dtype sweeps and GDN compare benchmark results with fresh-run results; Dense mesh dtype/routing fixtures do likewise |
 
 **Scope:** volume rows deliberately reuse the NormalBP volume fixtures because
 Go's grid ModeMeshBP uses that same Forward+Step path. They do not establish
 mesh-clock BPTT parity for non-Dense cells. The generic mesh runtime dispatches
 supported GPU layers, but the mesh-clock wire and its parity sign-off cover Dense.
-KMeans and Parallel remain deferred for this mode; no CPU fallback is supplied.
+KMeans and Parallel are signed off for Line/shared-volume credit above. No CPU fallback is supplied.
 
 **Validated:** 2026-10-26, unreleased. Precision policy above applies. Benchmark
 repetitions rebuild the initial child configuration and weights; timing includes
@@ -423,13 +473,16 @@ not establish a performance win.
 Run: `./scripts/macos_build_w2a.sh --tween-train`  
 Wires: `TWB1`/`TWBO` (Stack ModeTween leaf), `TWV1`/`TWVO` (Dense volume),
 and per-kind volume wires `TRV1`…`MBTV`, `MCTV`, `GDTV`, `SKTV`.
-`TestGoVMetalTweenTrain` contains **80 case groups**, including **20 leaf ×34**
-and **20 volume ×34** dtype sweeps. GDN is Float32-only.
+`TestGoVMetalTweenTrain` contains **130 case groups**, including **29 leaf ×34**
+and **26 volume ×34** dtype sweeps. GDN is Float32-only.
 
 All numerical projection, forward, backward, loss and SGD work runs on Metal.
 The global gap is block-averaged onto each local output shape and applied at
 `soft_lr = lr × 0.5`; Sequential/Residual expand their Dense leaves without
 chain-rule credit. Host code schedules the walk and stages buffers/tapes.
+
+KMeans / Parallel: the 50 additional groups per mode are detailed in the
+sections 2–6 extension evidence above.
 
 | Case group | Status | Evidence |
 |---|:---:|---|
@@ -445,16 +498,15 @@ chain-rule credit. Host code schedules the walk and stages buffers/tapes.
 | CNN1/2/3 / ConvT1/2/3 ×34 | [x] | Explicit per-dimension leaf fixtures, including Float32 and rank-5 inputs |
 | RNN / LSTM Float32 + ×34 | [x] | Exact weights; finite loss band |
 | Dense volume 111 / 211 / 222 Float32 | [x] | Reverse-hop projected local updates |
-| Volume 222 Float32: all 21 supported families | [x] | Per-kind local update dispatch; finite loss band |
-| Volume 211 ×34: all 20 dtype-generic families | [x] | Native storage updates across all supported dtypes |
+| Volume 222 Float32: all 23 supported families | [x] | Per-kind local update dispatch; finite loss band |
+| Volume 211 ×34: all 22 dtype-generic families | [x] | Native storage updates across all supported dtypes |
 | GPU projection and nested-credit primitives | [x] | Downsample, upsample, cancellation, invalid shapes, and original-input local updates |
 | Benchmark fixture reset | [x] | All leaf dtype sweeps and Dense volume dtype cases compare measured-run output against an independent run |
 
 **Validated:** 2026-10-26, unreleased. Exact tensor bits are required where
 specified; loss uses the finite float2 band above. GDN leaf weights require
 ≥strict, rather than exact bits. Volume weight subnormal flushing follows the
-existing Metal policy. KMeans and Parallel remain unverified for ModeTween; their NormalBP
-sign-off does not transfer to this mode. No host numerical fallback is supplied.
+existing Metal policy. KMeans and Parallel have independent ModeTween evidence above. No host numerical fallback is supplied.
 This sign-off is ModeTween only. TweenChain has its own sign-off below;
 Split/Alt and the requested Step/Mesh variants have separate sign-offs below; proxy/cache/sparse variants remain pending. Graph residency and performance tuning
 remain open; benchmark timings include resetting the fixture.
@@ -464,14 +516,17 @@ remain open; benchmark timings include resetting the fixture.
 Run: `./scripts/macos_build_w2a.sh --tweenchain-train`  
 Wires: `TCB1`/`TCBO` (Stack FamilyBP at full lr), `TCV1`/`TCVO` (Dense volume),
 and per-kind volume wires `TRC1`…`MBTC`, `MCTC`, `GDTC`, `SKTC`.
-`TestGoVMetalTweenChainTrain` contains **80 case groups**, including **20 leaf ×34**
-and **20 volume ×34** dtype sweeps. GDN is Float32-only.
+`TestGoVMetalTweenChainTrain` contains **130 case groups**, including **29 leaf ×34**
+and **26 volume ×34** dtype sweeps. GDN is Float32-only.
 
 Forward, backward, MSE/MSEGrad and native SGD use Metal kernels. TweenChain
 propagates the true chain-rule input gradient at **full lr**, including through
 Sequential, Residual and NestedStack. Volume credit is the same Forward+Step
 operation as NormalBP; the named TweenChain entry point and every wire are
 exercised here. Host code handles scheduling, allocation and tape/buffer staging.
+
+KMeans / Parallel: the 50 additional groups per mode are detailed in the
+sections 2–6 extension evidence above.
 
 | Case group | Status | Evidence |
 |---|:---:|---|
@@ -487,18 +542,17 @@ exercised here. Host code handles scheduling, allocation and tape/buffer staging
 | CNN1/2/3 / ConvT1/2/3 ×34 | [x] | Explicit per-dimension fixtures, including Float32 and rank-5 inputs |
 | RNN / LSTM Float32 + ×34 | [x] | Exact weights; finite loss band |
 | Dense volume 111 / 211 / 222 Float32 | [x] | NormalBP-equivalent volume credit at full lr |
-| Volume 222 Float32: all 21 supported families | [x] | Per-kind TweenChain protocol; true input-gradient comparisons |
-| Volume 211 ×34: all 20 dtype-generic families | [x] | Native weight updates and chain-rule input gradients |
+| Volume 222 Float32: all 23 supported families | [x] | Per-kind TweenChain protocol; true input-gradient comparisons |
+| Volume 211 ×34: all 22 dtype-generic families | [x] | Native weight updates and chain-rule input gradients |
 | GPU chain-rule/full-lr primitives | [x] | Hand-calculated Dense chain loss, weights and volume input gradient; invalid nil-loss/empty-stack rejection |
 | Benchmark fixture reset | [x] | Leaf dtype sweeps and Dense volume dtype fixtures compare measured-run output with an independent run |
 
-**Validated:** 2026-10-26, unreleased. Exact tensor bits are required where
-specified; loss uses the finite float2 band above. GDN leaf updated weights
-require ≥strict; global GDN Alt refreshed loss uses a finite relative `1e-5` band. GDN volume retains its NormalBP ≥industry floor, including
-input gradients. Volume weight subnormal flushing follows the existing Metal
-policy. KMeans/Parallel remain deferred; no CPU numerical fallback is supplied.
-This sign-off covers ModeTweenChain. The requested Step/Mesh variants have separate sign-offs below; remaining proxy/cache/sparse variants retain pending gates. Graph residency and performance
-tuning remain open; benchmark timings include resetting the fixture.
+**Validated:** 2026-10-26, unreleased. Exact tensor bits and the finite
+loss band apply where specified. GDN leaf weights retain ≥strict; its volume
+retains ≥industry. The existing subnormal and KMeans cancellation policies
+remain explicit above. KMeans/Parallel now have independent evidence for this
+mode. Remaining variants retain their own gates. Residency and performance
+tuning remain open; benchmark timings include fixture reset.
 
 ## w2a Go↔Metal (TweenSplit ModeTweenSplit) — sign-off evidence
 
@@ -627,44 +681,58 @@ Mesh-clock BPTT and SGD at full lr (FamilyBP, equivalent to MeshBP). Numerical w
 ## w2a Go↔Metal (StepTween ModeStepTween) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptween-train`  
-Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
+Batch: `./scripts/macos_build_w2a.sh --step-tween-all` (sections 2–6 + NormalBP + Metal-only checks).
 
-Wires: `STW1`/`STWO`; shared volume `TWV1` and per-kind Tween variants. `TestGoVMetalStepTweenTrain`: **80 case groups**.
+Wires: `STW1`/`STWO`; shared volume `TWV1` and per-kind Tween variants. `TestGoVMetalStepTweenTrain`: **130 case groups**.
 
 Line per-hop projected local credit at lr×0.5, applied when a training flight pops. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+KMeans / Parallel: the 50 additional groups per mode are detailed in the
+sections 2–6 extension evidence above.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
 | Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| All supported leaf families | [x] | 23 families; 22 dtype-generic families ×34, GDN Float32 only |
 | CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [x] | All 21 supported families |
-| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Volume 222 Float32 | [x] | All 23 supported families |
+| Volume 211 ×34 | [x] | All 22 dtype-generic families; shared parent volume credit for Line variants |
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact native weights and the finite
+Metal loss band apply where specified; GDN branches retain ≥strict. The
+existing subnormal policy and KMeans volume cancellation band remain explicit.
+KMeans/Parallel evidence is included above. Full graph residency and
+performance tuning remain open.
 
 ## w2a Go↔Metal (StepTweenChain ModeStepTweenChain) — sign-off evidence
 
 Run: `./scripts/macos_build_w2a.sh --steptweenchain-train`  
-Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
+Batch: `./scripts/macos_build_w2a.sh --step-tween-all` (sections 2–6 + NormalBP + Metal-only checks).
 
-Wires: `STC1`/`STCO`; shared volume `TCV1` and per-kind TweenChain variants. `TestGoVMetalStepTweenChainTrain`: **80 case groups**.
+Wires: `STC1`/`STCO`; shared volume `TCV1` and per-kind TweenChain variants. `TestGoVMetalStepTweenChainTrain`: **130 case groups**.
 
 Line per-hop true chain-rule BP at full lr, applied when a training flight pops. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+
+KMeans / Parallel: the 50 additional groups per mode are detailed in the
+sections 2–6 extension evidence above.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
 | Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
+| All supported leaf families | [x] | 23 families; 22 dtype-generic families ×34, GDN Float32 only |
 | CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [x] | All 21 supported families |
-| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
+| Volume 222 Float32 | [x] | All 23 supported families |
+| Volume 211 ×34 | [x] | All 22 dtype-generic families; shared parent volume credit for Line variants |
 | Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
 | Line state/credit primitives | [x] | Warmup, per-hop credit, frozen gap, action flights without training, unsupported-mode rejection |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. Exact native weights and the finite
+Metal loss band apply where specified; GDN branches retain ≥strict. The
+existing subnormal policy and KMeans volume cancellation band remain explicit.
+KMeans/Parallel evidence is included above. Full graph residency and
+performance tuning remain open.
 
 ## 1 — NormalBP
 
@@ -725,14 +793,14 @@ Ship: thin Stack host + `runtime/line` TickLine/TrainLineMSE; wire `STB1`/`STBO`
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported Line families and the shared 3D volume path validated, including all supported dtypes (GDN Float32 only). KMeans/Parallel remain open. Actual mesh-clock BPTT evidence is Dense-only; see section 7.
+**Checkpoint:** all 23 supported Line families and the shared 3D volume path validated, including all supported dtypes (GDN Float32 only). KMeans/Parallel are included in the independent 50-group extension above. Actual mesh-clock BPTT evidence is Dense-only; see section 7.
 
 ---
 
@@ -761,14 +829,14 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = reverse-hop volume 2�
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including all supported dtypes (GDN Float32 only). GDN leaf updated weights retain a ≥strict floor; other declared bands above apply. KMeans/Parallel remain open; other variant evidence is recorded separately.
+**Checkpoint:** all 23 supported families validated on Metal in leaves and volumes, including all supported dtypes (GDN Float32 only). GDN leaf updated weights retain a ≥strict floor; other declared bands above apply. KMeans/Parallel are included in the independent 50-group extension above; other variants retain separate evidence.
 
 ---
 
@@ -797,14 +865,14 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. 3D = volume Step 2×2×2×
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 21 supported families validated on Metal in leaves and volumes, including every supported dtype (GDN Float32 only). Full-rate chain-rule credit and volume input gradients are verified. GDN retains its declared precision floors; KMeans/Parallel remain open. Step/Mesh evidence is recorded separately below.
+**Checkpoint:** all 23 supported families validated on Metal in leaves and volumes, including every supported dtype (GDN Float32 only). Full-rate chain-rule credit and volume input gradients are verified. GDN retains its declared precision floors; KMeans/Parallel are included in the independent 50-group extension above. Step/Mesh evidence is recorded separately below.
 
 ---
 
@@ -833,14 +901,14 @@ Ship: `runtime/line` Credit::FamilyTween on pop (`apply_projected` @ `lr×0.5`);
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**Checkpoint:** All 23 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel are included in the independent 50-group extension above.
 
 ---
 
@@ -869,14 +937,14 @@ Ship: `runtime/line` Credit::FamilyBP on pop (same credit as StepBP / TweenChain
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**Checkpoint:** All 23 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel are included in the independent 50-group extension above.
 
 ---
 

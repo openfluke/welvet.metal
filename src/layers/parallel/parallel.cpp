@@ -207,9 +207,10 @@ Status execute(Layer& layer, const TensorF32& input, const TensorF32* grad_out,
   if (pre) *pre = input;
   if (post) {
     post->data = std::move(combined);
-    post->shape = standard && input.shape.size() == 3
-                      ? std::vector<int64_t>{input.shape[0], input.shape[1], od}
-                      : std::vector<int64_t>{input.shape[0], od};
+    // Go unflattenFeat keeps a singleton row axis for non-matrix inputs.
+    post->shape = input.shape.size() == 2
+                      ? std::vector<int64_t>{input.shape[0], od}
+                      : std::vector<int64_t>{input.shape[0], n / int(input.shape[0]), od};
   }
   if (!grad_out) return Status::Ok();
   grad_in->shape = input.shape;

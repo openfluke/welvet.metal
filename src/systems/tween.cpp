@@ -10,6 +10,7 @@
 #include "welvet/convt2.hpp"
 #include "welvet/convt3.hpp"
 #include "welvet/dense.hpp"
+#include "welvet/parallel.hpp"
 #include "welvet/embedding.hpp"
 #include "welvet/layernorm.hpp"
 #include "welvet/lstm.hpp"
@@ -24,6 +25,7 @@
 #include "welvet/swiglu.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include "welvet/metal/ops.hpp"
 #include <limits>
 #include <string>
@@ -79,9 +81,9 @@ Status apply_one(architecture::Cell* cell, const TensorF32& dW, double lr) {
   case architecture::OpKind::GDN:
     return gdn::apply_grad_sgd(&cell->gdn_op, dW, lr);
   case architecture::OpKind::KMeans:
-    return Status::Gap("tween KMeans on Metal");
+    return kmeans::apply_grad_sgd(&cell->kmeans_op, dW, lr);
   case architecture::OpKind::Parallel:
-    return Status::Gap("tween Parallel on Metal");
+    return parallel::apply_grad_sgd(&cell->parallel_op, dW, lr);
   default:
     return Status::Ok();
   }
@@ -189,6 +191,135 @@ Status apply_projected_res(residual::Layer& layer, const TensorF32& grad_out,
   return Status::Ok();
 }
 
+// Capture every branch leaf before updating any weights. Filter's extra
+// forward can advance stateful rule counters, exactly as Go collectTweenLeaves.
+struct ProjectedLeaf {
+  stack::Child* child = nullptr;
+  dense::Layer* dense = nullptr;
+  TensorF32 input, pre, post;
+};
+
+Status collect_projected(stack::Child& child, const TensorF32& input,
+                         std::vector<ProjectedLeaf>* leaves, TensorF32* output);
+
+Status collect_dense(dense::Layer& dense, const TensorF32& input,
+                     std::vector<ProjectedLeaf>* leaves, TensorF32* output) {
+  ProjectedLeaf leaf;
+  leaf.dense = &dense;
+  leaf.input = input;
+  if (auto st = dense::forward_f32(dense, input, &leaf.pre, &leaf.post); !st) return st;
+  *output = leaf.post;
+  leaves->push_back(std::move(leaf));
+  return Status::Ok();
+}
+
+Status combine_collected(const stack::Child& child, const std::vector<TensorF32>& posts,
+                          TensorF32* output) {
+  if (posts.empty()) return Status::Err(StatusCode::InvalidArgument, "Tween: empty Parallel");
+  const auto& cfg = child.parallel_nest;
+  const bool concat = cfg.combine == int(parallel::Combine::Concat);
+  const int rows = concat ? int(posts[0].shape[0]) : 1;
+  const int count = int(posts.size());
+  std::vector<int32_t> widths;
+  std::vector<float> packed;
+  int od = 0;
+  for (const auto& post : posts) {
+    if (rows <= 0 || post.data.size() % rows)
+      return Status::Err(StatusCode::InvalidArgument, "Tween: Parallel output shape");
+    const int width = int(post.data.size()) / rows;
+    if (!concat && !widths.empty() && width != widths[0])
+      return Status::Err(StatusCode::InvalidArgument, "Tween: unequal Parallel outputs");
+    widths.push_back(width);
+    od += width;
+    packed.insert(packed.end(), post.data.begin(), post.data.end());
+  }
+  if (!concat) od = widths[0];
+  std::vector<float> values(rows * od), scratch(4 * count), unused;
+  const double beta = cfg.disagree_beta == 0 ? 1 : cfg.disagree_beta;
+  uint64_t bits;
+  std::memcpy(&bits, &beta, sizeof(bits));
+  parallel::Config pc;
+  pc.branches = count;
+  pc.sparse_k = cfg.sparse_k;
+  if (auto st = metal::run("op_parallel",
+          {metal::read(packed), metal::read(widths), metal::read(unused), metal::read(unused),
+           metal::write(values), metal::write(unused), metal::write(unused), metal::write(scratch)},
+          {rows, count, od, cfg.combine, parallel::sparse_k_eff(pc), 0,
+           int32_t(uint32_t(bits)), int32_t(uint32_t(bits >> 32))}); !st) return st;
+  output->shape = concat ? std::vector<int64_t>{rows, od} : posts[0].shape;
+  output->data = std::move(values);
+  return Status::Ok();
+}
+
+Status collect_projected(stack::Child& child, const TensorF32& input,
+                         std::vector<ProjectedLeaf>* leaves, TensorF32* output) {
+  if (child.kind == stack::Kind::NestedStack) {
+    TensorF32 current = input;
+    for (auto& nested : child.nested) {
+      TensorF32 next;
+      if (auto st = collect_projected(nested, current, leaves, &next); !st) return st;
+      current = std::move(next);
+    }
+    *output = std::move(current);
+    return Status::Ok();
+  }
+  if (child.kind == stack::Kind::Sequential || child.kind == stack::Kind::Residual) {
+    auto& children = child.kind == stack::Kind::Sequential
+                         ? child.sequential_op.children : child.residual_op.children;
+    TensorF32 flat = flatten_seq_like(input), current = flat;
+    for (auto& dense : children) {
+      TensorF32 next;
+      if (auto st = collect_dense(dense, current, leaves, &next); !st) return st;
+      current = std::move(next);
+    }
+    if (child.kind == stack::Kind::Residual && current.data.size() == flat.data.size()) {
+      if (auto st = metal::run("op_add", {metal::read(current.data), metal::read(flat.data),
+                                         metal::write(current.data)},
+                              {int(current.data.size())}, {}, current.data.size()); !st) return st;
+    }
+    *output = std::move(current);
+    return Status::Ok();
+  }
+  if (child.kind == stack::Kind::Parallel) {
+    std::vector<TensorF32> posts(child.nested.size());
+    for (size_t i = 0; i < child.nested.size(); ++i)
+      if (auto st = collect_projected(child.nested[i], input, leaves, &posts[i]); !st) return st;
+    if (child.parallel_nest.has_gate) {
+      TensorF32 gate_out;
+      if (auto st = collect_dense(child.dense_op, input, leaves, &gate_out); !st) return st;
+    }
+    if (child.parallel_nest.combine == int(parallel::Combine::Filter)) {
+      TensorF32 pre;
+      return stack::child_forward(child, input, &pre, output);
+    }
+    return combine_collected(child, posts, output);
+  }
+  ProjectedLeaf leaf;
+  leaf.child = &child;
+  leaf.input = input;
+  if (auto st = stack::child_forward(child, input, &leaf.pre, &leaf.post); !st) return st;
+  *output = leaf.post;
+  if (stack::child_grad_w_size(child) > 0) leaves->push_back(std::move(leaf));
+  return Status::Ok();
+}
+
+Status apply_projected_parallel(stack::Child& child, const TensorF32& gap,
+                                const TensorF32& input, double soft_lr) {
+  std::vector<ProjectedLeaf> leaves;
+  TensorF32 output;
+  if (auto st = collect_projected(child, input, &leaves, &output); !st) return st;
+  for (auto& leaf : leaves) {
+    TensorF32 projected, gx;
+    if (auto st = project_gap(gap, leaf.post.shape, &projected); !st) return st;
+    if (leaf.dense) {
+      if (auto st = apply_dense_projected(*leaf.dense, projected, leaf.input, leaf.pre,
+                                          leaf.post, soft_lr); !st) return st;
+    } else if (auto st = stack::child_family_bp(*leaf.child, projected, leaf.input,
+                                               leaf.pre, soft_lr, &gx); !st) return st;
+  }
+  return Status::Ok();
+}
+
 } // namespace
 
 Status project_gap(const TensorF32& src, const std::vector<int64_t>& dst_shape, TensorF32* out) {
@@ -219,7 +350,8 @@ Status apply_projected_ops(stack::Layer& ops, const TensorF32& grad_out, const T
   for (stack::Child* ch : flat) {
     TensorF32 pre, post;
     if (auto st = stack::child_forward(*ch, current, &pre, &post); !st) return st;
-    if (ch->kind == stack::Kind::Sequential || ch->kind == stack::Kind::Residual) {
+    if (ch->kind == stack::Kind::Sequential || ch->kind == stack::Kind::Residual ||
+        ch->kind == stack::Kind::Parallel) {
       if (auto st = apply_projected(*ch, grad_out, current, soft_lr); !st) return st;
     } else {
       TensorF32 proj, g_in;
@@ -243,6 +375,8 @@ Status apply_projected(stack::Child& c, const TensorF32& grad_out, const TensorF
     return apply_projected_seq(c.sequential_op, grad_out, input, soft_lr);
   case stack::Kind::Residual:
     return apply_projected_res(c.residual_op, grad_out, input, soft_lr);
+  case stack::Kind::Parallel:
+    return apply_projected_parallel(c, grad_out, input, soft_lr);
   case stack::Kind::NestedStack: {
     stack::Layer ops;
     ops.children = std::move(c.nested);

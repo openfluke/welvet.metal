@@ -113,10 +113,10 @@ int run_meshtween(int bench_iters);
 int run_meshtweenchain(int bench_iters);
 
 int run_kmeans_normalbp(int);
-int run_volume_kmeans_normalbp(int);
+int run_volume_kmeans_normalbp(int, VolumeTrainMode mode = VolumeTrainMode::NormalBP);
 int run_parallel_normalbp(int);
 int run_parallel_poly_train(int);
 
-int run_volume_parallel_normalbp(int);
+int run_volume_parallel_normalbp(int, VolumeTrainMode mode = VolumeTrainMode::NormalBP);
 
 int run_normalbp_child(int);
