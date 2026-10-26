@@ -51,10 +51,17 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   tested). StepTween/Split/Alt use frozen popped gaps; StepTweenChain uses true BP.
   The six leaf/Line sections each cover 80 groups, including supported leaf and
   volume dtypes across all 21 supported families (GDN Float32 only).
-- MeshTween uses captured last-tick local credit at half lr; MeshTweenChain uses
-  BPTT at full lr. Each has 48 groups: Dense clock 111/211/222 Float32, clock
-  111/211 ×34, and all supported shared volume families/dtypes. Non-Dense clock
-  parity remains open. Proxy/cache/sparse credit modes remain unsupported.
+- MeshTween uses captured last-tick local credit at half lr. Its production
+  training entry point and generic clock wire share `step::apply_tween`.
+  All 23 actual node kinds have 111/211 supported-dtype and 222 Float32 clock
+  coverage, plus recurrent links, KMeans outputs, all Parallel combines and
+  exact replay. Zero lr preserves native weights. The 159 groups also include
+  shared volume credit. Sequential/Residual project onto Dense leaves;
+  Stack/Parallel nodes use concrete local backward/SGD. No temporal BPTT or
+  chain-rule input gradient is claimed for this mode.
+- MeshTweenChain uses BPTT at full lr. Its 48 groups cover Dense clock and shared
+  volume paths; non-Dense clock parity retains its separate gate.
+  Proxy/cache/sparse credit modes remain unsupported.
 - Float32 SGD encodes tiny steps in a scaled GPU representation so stored
   subnormals survive later phases that produce normal-range weights. Other
   kernel subnormal limits remain as documented. GDN Alt refreshed loss uses
@@ -115,6 +122,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/macos_build_w2a.sh --tween-train
 ./scripts/macos_build_w2a.sh --tweenchain-train
 ./scripts/macos_build_w2a.sh --tween-next-all
+./scripts/macos_build_w2a.sh --meshtween-train
 ```
 
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
@@ -130,8 +138,11 @@ and nested local credit. The TweenChain runner executes
 `TestGoVMetalTweenChainTrain` (130 case groups with leaf/volume dtype sweeps) plus
 `TestGoVMetalOnly`, including hand-calculated chain-rule/full-rate checks.
 The `--tween-next-all` batch covers the eight requested Split/Alt/Step/Mesh sections
-(576 groups) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
+(687 groups, including the expanded MeshTween suite) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
 action flights, unsupported credit rejection and subnormal SGD storage.
+The MeshTween runner covers its 159 groups plus MeshBP, ModeTween and Metal-only
+regressions. Generic clock replay uses at least two measured iterations and
+requires exact repeated Metal outputs and weights.
 Line, Tween and TweenChain benchmark iterations reset all
 weights/configuration before each run and
 return the real final loss; reset cost is included. All runners default to one

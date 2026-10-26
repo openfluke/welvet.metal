@@ -310,6 +310,32 @@ Status apply_sgd(architecture::Grid& g, const std::vector<TensorF32>& layer_dws,
   return Status::Ok();
 }
 
+// Apply only the last captured clock tape; Tween does not traverse time.
+Status apply_tween(architecture::Grid& g, const State& s, const TensorF32& grad_out, double lr) {
+  if (s.history_in.empty() || s.history_pre.empty() ||
+      s.history_in.back().size() != g.cells.size() ||
+      s.history_pre.back().size() != g.cells.size() || s.layer_data.size() != g.cells.size())
+    return Status::Err(StatusCode::InvalidArgument, "step: missing Tween clock tape");
+  if (lr == 0.0) return Status::Ok();
+  const auto& inputs = s.history_in.back();
+  const auto& pres = s.history_pre.back();
+  TensorF32 gap = grad_out;
+  for (int idx = int(g.cells.size())-1; idx >= 0; --idx) {
+    auto& cell = g.cells[size_t(idx)];
+    const auto& cin = inputs[size_t(idx)];
+    if (cell.meta.is_disabled || cin.data.empty() || pres[size_t(idx)].data.empty() ||
+        s.layer_data[size_t(idx)].data.empty()) continue;
+    if (auto rc = systems::tween::apply_cell_projected(cell,gap,cin,pres[size_t(idx)],
+                       s.layer_data[size_t(idx)],lr*0.5); !rc) return rc;
+    TensorF32 next;
+    next.shape = cin.shape;
+    next.data.assign(cin.data.size(),0.0f);
+    if (gap.data.size() == next.data.size()) next.data = gap.data;
+    gap = std::move(next);
+  }
+  return Status::Ok();
+}
+
 Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32& target, int ticks,
                  double lr, double* loss, Credit credit) {
   if (!loss) {
@@ -345,23 +371,7 @@ Status train_mse(architecture::Grid& g, const TensorF32& input, const TensorF32&
   }
 
   if (credit == Credit::FamilyTween) {
-    const auto& inputs = st.history_in.back();
-    const auto& pres = st.history_pre.back();
-    TensorF32 gap = std::move(gy);
-    for (int idx = int(g.cells.size())-1; idx >= 0; --idx) {
-      auto& cell = g.cells[size_t(idx)];
-      const auto& cin = inputs[size_t(idx)];
-      if (cell.meta.is_disabled || cin.data.empty() || pres[size_t(idx)].data.empty() ||
-          st.layer_data[size_t(idx)].data.empty()) continue;
-      if (auto s = systems::tween::apply_cell_projected(cell,gap,cin,pres[size_t(idx)],
-                         st.layer_data[size_t(idx)],lr*0.5); !s) return s;
-      TensorF32 next;
-      next.shape = cin.shape;
-      next.data.assign(cin.data.size(),0.0f);
-      if (gap.data.size() == next.data.size()) next.data = gap.data;
-      gap = std::move(next);
-    }
-    return Status::Ok();
+    return apply_tween(g, st, gy, lr);
   }
   TensorF32 gin;
   std::vector<TensorF32> dws;

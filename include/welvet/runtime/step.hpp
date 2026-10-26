@@ -29,6 +29,9 @@ Status backward(architecture::Grid& g, State* s, const TensorF32& grad_out, Tens
 
 Status apply_sgd(architecture::Grid& g, const std::vector<TensorF32>& layer_dws, double lr);
 
+// Local projected credit on the last captured tick, at half lr; no BPTT.
+Status apply_tween(architecture::Grid& g, const State& s, const TensorF32& grad_out, double lr);
+
 enum class Credit : int32_t {
   FamilyBP = 0,
   FamilyTween = 1,

@@ -640,23 +640,46 @@ Line per-hop Split→Tween at full/half lr with a frozen popped gap. Its shared 
 
 ## w2a Go↔Metal (MeshTween mesh-clock) — sign-off evidence
 
-Run: `./scripts/macos_build_w2a.sh --meshtween-train`  
-Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
+Run: `./scripts/macos_build_w2a.sh --meshtween-train`.
+The runner includes MeshTween, MeshBP, ModeTween and Metal-only regression gates.
+`TestGoVMetalMeshTweenTrain` contains **159 case groups**: 48 existing Dense/shared
+volume groups, eight KMeans/Parallel volume groups, and 103 all-family clock groups.
+Wires: `MGW1`/`MGWO` for actual heterogeneous clock nodes, existing `MTW1`/`MTWO`
+for Dense, and the existing per-kind ModeTween volume wires.
 
-Wires: `MTW1`/`MTWO`; shared volume `TWV1` and per-kind Tween variants. `TestGoVMetalMeshTweenTrain`: **48 case groups**.
-
-Last-tick captured mesh credit: projected local updates at lr×0.5; no BPTT. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+Last-tick captured mesh credit applies local projected updates at lr×0.5.
+`step::train_mse(FamilyTween)` and the generic clock wire share
+`step::apply_tween`; warmup/remote fixtures supply the captured state directly.
+All numerical forward, gap projection, backward and native SGD work uses Metal.
+Host code schedules ticks, stores tapes, rebuilds fixtures and stages buffers.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
-| Dense mesh-clock Float32 | [x] | 111 / 211 / 222; double-buffer ticks |
-| Dense mesh-clock ×34 | [x] | 111 / 211 native dtypes; benchmark reset checked |
-| Shared volume credit | [x] | All 21 supported families at 222 Float32; all 20 dtype-generic families at 211 ×34 |
-| Credit primitive | [x] | Hand-calculated two-cell update distinguishes local Tween from BPTT/full-lr credit |
+| All 23 actual node kinds | [x] | 111 / 211 ×34, plus 222 Float32; GDN Float32 only |
+| Recurrent remote clock | [x] | 22 shape-preserving families; detached warmup then captured ticks |
+| KMeans output modes | [x] | Probabilities and Features ×34 in three-node chains |
+| Parallel combines | [x] | All seven ×34, including Filter gate updates and Concat width changes |
+| Shared volume credit | [x] | All 23 families; supported dtype loops, including KMeans/Parallel 111/chain/211 ×34 and 222 Float32 |
+| Zero learning rate | [x] | Dense/KMeans/Parallel preserve native weights ×34 |
+| Captured tensors and updates | [x] | Every tick/node input, pre and post; final loss/output and all updated weights |
+| Exact replay | [x] | Independent fresh Metal result matches at least two measured iterations exactly |
+| Credit primitive | [x] | Existing hand-calculated two-cell update distinguishes local Tween from BPTT/full-lr credit |
 
-**Scope:** non-Dense mesh-clock parity remains open. Shared volume evidence exercises the Go ModeTween volume path; it does not establish mesh-clock parity for those cells.
+**Scope:** this is last-tick local mesh credit; no temporal backward pass or
+chain-rule input/accumulated parameter gradient is exported. Sequential and
+Residual project onto their Dense leaves. Stack and Parallel nodes use their
+concrete backward/SGD as local units, matching the existing grid ModeTween
+volume contract. Gap copying continues only when the next input length matches;
+otherwise the upstream gap is zero. Go references combine Go step capture,
+concrete Go backward/SGD and its public local-Tween collector in w2a.
+Clock precision policy: finite loss band, exact/native-subnormal weight
+checks, GDN tensors ≥loose and weights ≥strict. Shared-volume checks retain
+their existing gates, including GDN ≥industry. Full graph residency and
+performance tuning remain separate work. MeshTweenChain retains its own gate.
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+**Validated:** 2026-10-26, unreleased. All 159 MeshTween groups passed; the
+combined runner, including 103 MeshBP groups, 130 ModeTween groups and Metal-only
+guards, passed in 299.198 seconds. Shared/static builds passed.
 
 ## w2a Go↔Metal (MeshTweenChain mesh-clock) — sign-off evidence
 
@@ -1022,36 +1045,60 @@ their own clock sign-off below.
 ## 8 — MeshTween
 
 Needs Mesh + Tween.  
-Ship: `runtime/step` `Credit::FamilyTween` — Forward×ticks → last-tick `apply_cell_projected` @ `lr×0.5` (`MTW1`/`MTWO`); w2a `--meshtween-train`.  
+Ship: `runtime/step` `Credit::FamilyTween` — Forward×ticks → last-tick `apply_tween` / `apply_cell_projected` @ `lr×0.5` (`MGW1`/`MGWO`, existing Dense `MTW1`/`MTWO`); w2a `--meshtween-train`.
+
 **3D volumetric** = ModeTween volume credit (`TWV1`/`TRV1`…). CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
 | Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| RMSNorm | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| LayerNorm | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| SwiGLU | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| Softmax | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| Embedding | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| MHA | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| CNN1 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| CNN2 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| CNN3 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| ConvT1 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| ConvT2 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| ConvT3 | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| RNN | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| LSTM | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| Sequential | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| Residual | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| Metacognition | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| GDN | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [x] | [ ] | shared volume ×34; mesh-clock parity pending |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** Dense clock verified at 111/211/222 Float32 and 111/211 ×34; all supported shared volume families/dtypes verified. Non-Dense clock parity remains open.
+**Validated:** 2026-10-26, unreleased. The combined MeshTween/MeshBP/ModeTween
+and Metal-only runner passed in 299.198 seconds. Shared and static builds passed.
+
+**Checkpoint:** All 23 supported families have actual clock and shared-volume
+sign-off. The 159 MeshTween groups passed in 122.91 seconds. Clock fixtures
+cover 111/211 ×34 for the 22 dtype-generic families and 222 Float32 for all 23;
+GDN remains Float32-only. Every captured node input/pre/post, final output/loss
+and updated weight is checked. Clock GDN tensors require ≥loose and weights
+≥strict; other weights remain exact or use the existing subnormal policy.
+Shared volume gates retain their existing floors.
+
+The 103 generic clock groups include recurrent remote links with detached
+warmup for 22 shape-preserving families, both KMeans outputs and seven Parallel
+combines ×34, and Dense/KMeans/Parallel zero-lr native preservation ×34.
+Embedding uses one 111 tick, and disabled ingress plus RMSNorm adapters in grids;
+integer indices are not fed back from embedding outputs. SwiGLU uses the bounded
+recurrent trajectory documented in section 7. Fresh and at least two measured
+Metal replays match exactly across outputs, weights, loss and all captured tapes.
+
+This mode applies local credit only on the last tick. Sequential/Residual
+project onto Dense leaves; Stack/Parallel cells are concrete local backward/SGD
+units, as in the shared grid ModeTween contract. No temporal BPTT, chain-rule
+input gradient or accumulated parameter gradient is claimed. Full residency
+and throughput tuning retain separate gates. MeshTweenChain remains section 9.
 
 ---
 
@@ -1690,6 +1737,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
+| Unreleased — MeshTween section 8 | All 23 actual node kinds, both KMeans outputs and all Parallel combines: 159 clock/shared-volume groups; final-tick half-lr local credit, recurrent remote links, zero-lr native preservation and exact replay. MeshTween/MeshBP/ModeTween/Metal-only runner passed in 299.198s; shared/static builds passed. |
 | Unreleased — MeshBP section 7 | All 23 actual node kinds: 103 clock groups, 111/211 supported dtypes and 222 Float32; recurrent remote links, both KMeans outputs, all Parallel combines, zero-lr native preservation and exact two-iteration replay. Combined MeshBP/StepBP/NormalBP/Metal-only runner passed in 372.500s; shared/static builds passed. |
 | Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. All-family MeshBP clock parity is now recorded in section 7; other mesh modes retain separate gates. ModeTween: 80 case groups, supported leaf/volume dtypes, Metal projection/local credit and benchmark reset checks passed. ModeTweenChain: 80 groups, supported leaf/volume dtypes, full-lr chain-rule credit and true input gradients validated. Eight requested Split/Alt/Step/Mesh sections: 576 groups; tiny-SGD preservation and credit/phase primitives verified. |
 | `0.19-m2-meshbp` | StepBP Line + MeshBP Go↔Metal: STB1 Line FamilyBP × kinds (+×34) + MBP1 Dense mesh-clock 111/211/222 + ModeMeshBP vol 222 for NormalBP-signed kinds (`runtime/line` + `runtime/step`; KMeans Line deferred) |

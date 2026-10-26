@@ -187,7 +187,7 @@ fi
 
 if [[ "$MODE" == "meshtween_train" ]]; then
   export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
-  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalMeshTweenTrain|TestGoVMetalOnly)$' -timeout 30m
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalMeshTweenTrain|TestGoVMetalMeshBPTrain|TestGoVMetalTweenTrain|TestGoVMetalOnly)$' -timeout 45m
   exit 0
 fi
 
