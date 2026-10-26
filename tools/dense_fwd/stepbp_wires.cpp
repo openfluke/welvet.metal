@@ -1298,3 +1298,159 @@ int run_normalbp_child(int bench_iters) {
   if (auto st = welvet::stack::child_export_f32(child, weights.data()); !st) return 1;
   return write_cnn_nbp_leaf_out("NBLO", pre.data, post.data, dx.data, dw.data, weights, loss);
 }
+
+// MGB1: heterogeneous mesh-clock BPTT. All tensors, gradients and per-tick
+// snapshots are exported for w2a; no CPU numerical reference is linked here.
+namespace {
+welvet::Status bind_mesh_child(welvet::architecture::Grid& grid, const welvet::architecture::Coord& c,
+                               welvet::stack::Child child) {
+  using namespace welvet;
+  switch(child.kind) {
+  case stack::Kind::Dense: return architecture::bind_dense(grid,c.z,c.y,c.x,c.l,std::move(child.dense_op));
+  case stack::Kind::RMSNorm: return architecture::bind_rmsnorm(grid,c.z,c.y,c.x,c.l,std::move(child.rmsnorm_op));
+  case stack::Kind::LayerNorm: return architecture::bind_layernorm(grid,c.z,c.y,c.x,c.l,std::move(child.layernorm_op));
+  case stack::Kind::SwiGLU: return architecture::bind_swiglu(grid,c.z,c.y,c.x,c.l,std::move(child.swiglu_op));
+  case stack::Kind::Softmax: return architecture::bind_softmax(grid,c.z,c.y,c.x,c.l,std::move(child.softmax_op));
+  case stack::Kind::Embedding: return architecture::bind_embedding(grid,c.z,c.y,c.x,c.l,std::move(child.embedding_op));
+  case stack::Kind::MHA: return architecture::bind_mha(grid,c.z,c.y,c.x,c.l,std::move(child.mha_op));
+  case stack::Kind::CNN1: return architecture::bind_cnn1(grid,c.z,c.y,c.x,c.l,std::move(child.cnn1_op));
+  case stack::Kind::CNN2: return architecture::bind_cnn2(grid,c.z,c.y,c.x,c.l,std::move(child.cnn2_op));
+  case stack::Kind::CNN3: return architecture::bind_cnn3(grid,c.z,c.y,c.x,c.l,std::move(child.cnn3_op));
+  case stack::Kind::ConvT1: return architecture::bind_convt1(grid,c.z,c.y,c.x,c.l,std::move(child.convt1_op));
+  case stack::Kind::ConvT2: return architecture::bind_convt2(grid,c.z,c.y,c.x,c.l,std::move(child.convt2_op));
+  case stack::Kind::ConvT3: return architecture::bind_convt3(grid,c.z,c.y,c.x,c.l,std::move(child.convt3_op));
+  case stack::Kind::RNN: return architecture::bind_rnn(grid,c.z,c.y,c.x,c.l,std::move(child.rnn_op));
+  case stack::Kind::LSTM: return architecture::bind_lstm(grid,c.z,c.y,c.x,c.l,std::move(child.lstm_op));
+  case stack::Kind::Sequential: return architecture::bind_sequential(grid,c.z,c.y,c.x,c.l,std::move(child.sequential_op));
+  case stack::Kind::Residual: return architecture::bind_residual(grid,c.z,c.y,c.x,c.l,std::move(child.residual_op));
+  case stack::Kind::Mamba: return architecture::bind_mamba(grid,c.z,c.y,c.x,c.l,std::move(child.mamba_op));
+  case stack::Kind::Metacognition: return architecture::bind_metacognition(grid,c.z,c.y,c.x,c.l,std::move(child.metacognition_op));
+  case stack::Kind::GDN: return architecture::bind_gdn(grid,c.z,c.y,c.x,c.l,std::move(child.gdn_op));
+  case stack::Kind::KMeans: return architecture::bind_kmeans(grid,c.z,c.y,c.x,c.l,std::move(child.kmeans_op));
+  case stack::Kind::NestedStack: {
+    stack::Layer layer; layer.children=std::move(child.nested);
+    return architecture::bind_stack(grid,c.z,c.y,c.x,c.l,std::move(layer));
+  }
+  case stack::Kind::Parallel: {
+    parallel::Layer layer; const auto& p=child.parallel_nest;
+    layer.cfg={p.dim,p.out_feat,int(child.nested.size()),parallel::Combine(p.combine),p.seq_len,p.sparse_k,p.disagree_beta};
+    layer.branches=std::move(child.nested);
+    if(p.has_gate)layer.gate=std::move(child.dense_op);
+    return architecture::bind_parallel(grid,c.z,c.y,c.x,c.l,std::move(layer));
+  }
+  default:return Status::Err(StatusCode::InvalidArgument,"mesh: invalid child");
+  }
+}
+welvet::stack::Child take_mesh_child(welvet::architecture::Cell& cell) {
+  using namespace welvet;
+  stack::Child child;child.kind=stack::Kind(int(cell.op_kind));
+  switch(child.kind) {
+  case stack::Kind::Dense: child.dense_op=std::move(cell.dense_op);break;
+  case stack::Kind::RMSNorm: child.rmsnorm_op=std::move(cell.rmsnorm_op);break;
+  case stack::Kind::LayerNorm: child.layernorm_op=std::move(cell.layernorm_op);break;
+  case stack::Kind::SwiGLU: child.swiglu_op=std::move(cell.swiglu_op);break;
+  case stack::Kind::Softmax: child.softmax_op=std::move(cell.softmax_op);break;
+  case stack::Kind::Embedding: child.embedding_op=std::move(cell.embedding_op);break;
+  case stack::Kind::MHA: child.mha_op=std::move(cell.mha_op);break;
+  case stack::Kind::CNN1: child.cnn1_op=std::move(cell.cnn1_op);break;
+  case stack::Kind::CNN2: child.cnn2_op=std::move(cell.cnn2_op);break;
+  case stack::Kind::CNN3: child.cnn3_op=std::move(cell.cnn3_op);break;
+  case stack::Kind::ConvT1: child.convt1_op=std::move(cell.convt1_op);break;
+  case stack::Kind::ConvT2: child.convt2_op=std::move(cell.convt2_op);break;
+  case stack::Kind::ConvT3: child.convt3_op=std::move(cell.convt3_op);break;
+  case stack::Kind::RNN: child.rnn_op=std::move(cell.rnn_op);break;
+  case stack::Kind::LSTM: child.lstm_op=std::move(cell.lstm_op);break;
+  case stack::Kind::Sequential: child.sequential_op=std::move(cell.sequential_op);break;
+  case stack::Kind::Residual: child.residual_op=std::move(cell.residual_op);break;
+  case stack::Kind::Mamba: child.mamba_op=std::move(cell.mamba_op);break;
+  case stack::Kind::Metacognition: child.metacognition_op=std::move(cell.metacognition_op);break;
+  case stack::Kind::GDN: child.gdn_op=std::move(cell.gdn_op);break;
+  case stack::Kind::KMeans: child.kmeans_op=std::move(cell.kmeans_op);break;
+  case stack::Kind::NestedStack:child.nested=std::move(cell.stack_op.children);break;
+  case stack::Kind::Parallel: {
+    const auto& p=cell.parallel_op.cfg;
+    child.parallel_nest={int(p.combine),p.dim,p.out_feat,p.seq_len,p.sparse_k,p.disagree_beta,cell.parallel_op.gate?1:0};
+    child.nested=std::move(cell.parallel_op.branches);
+    if(cell.parallel_op.gate)child.dense_op=std::move(*cell.parallel_op.gate);
+    break;
+  }
+  default:break;
+  }
+  return child;
+}
+bool read_mesh_tensor(welvet::TensorF32* t) {
+  int32_t rank;if(!read_exact(&rank,1)||rank<1||rank>5)return false;
+  std::vector<int32_t> shape(rank);if(!read_exact(shape.data(),shape.size()))return false;
+  size_t count=1;for(int d:shape){if(d<=0||count>size_t(1<<26)/d)return false;count*=d;}
+  t->shape.assign(shape.begin(),shape.end());t->data.resize(count);
+  return read_exact(t->data.data(),count);
+}
+bool write_mesh_tensor(const welvet::TensorF32& t) {
+  int32_t rank=int(t.shape.size()),count=int(t.data.size());
+  if(!write_exact(&rank,1))return false;
+  for(auto d:t.shape){int32_t dim=int32_t(d);if(!write_exact(&dim,1))return false;}
+  return write_exact(&count,1)&&write_exact(t.data.data(),t.data.size());
+}
+}
+int run_mesh_generic_bp(int bench_iters) {
+  using namespace welvet;
+  int32_t depth,rows,cols,lpc,ticks,warmup,n_links;
+  double lr;
+  if(!read_exact(&depth,1)||!read_exact(&rows,1)||!read_exact(&cols,1)||!read_exact(&lpc,1)||
+     !read_exact(&ticks,1)||!read_exact(&warmup,1)||!read_exact(&lr,1)||!read_exact(&n_links,1))return 2;
+  size_t cell_count = 1;
+  for (int d : {depth, rows, cols, lpc}) {
+    if (d <= 0 || cell_count > 4096 / size_t(d)) return 2;
+    cell_count *= size_t(d);
+  }
+  if(ticks<=0||ticks>4096||warmup<0||warmup>4096||n_links<0||n_links>4096)return 2;
+  std::vector<int32_t> links(n_links*8);if(!read_exact(links.data(),links.size()))return 2;
+  auto empty=architecture::new_grid(depth,rows,cols,lpc);
+  const auto coords=architecture::hop_order(empty);
+  std::vector<int32_t> enabled(coords.size());
+  ChildReader initial;
+  for(size_t i=0;i<coords.size();++i){if(!read_exact(&enabled[i],1))return 2;if(enabled[i]){stack::Child child;if(!read_child(initial,&child))return 2;}}
+  TensorF32 input,target,post,gin;
+  if(!read_mesh_tensor(&input)||!read_mesh_tensor(&target))return 2;
+  architecture::Grid grid;
+  runtime::step::State state;
+  std::vector<TensorF32> grads;
+  std::vector<std::vector<TensorF32>> posts;
+  std::vector<std::vector<float>> weights;
+  double loss=0;
+  auto once=[&]()->Status {
+    grid=architecture::new_grid(depth,rows,cols,lpc);
+    state={};posts.clear();weights.clear();
+    ChildReader replay(&initial.bytes);
+    for(size_t i=0;i<coords.size();++i){const auto& c=coords[i];
+      if(!enabled[i]){architecture::at(grid,c.z,c.y,c.x,c.l)->meta.is_disabled=true;continue;}
+      stack::Child child;if(!read_child(replay,&child))return Status::Gap("mesh replay");
+      if(auto st=bind_mesh_child(grid,c,std::move(child));!st)return st;
+    }
+    runtime::step::ensure_size(&state,int(coords.size()));
+    for(int t=0;t<warmup;++t){runtime::step::set_input(&state,input);if(auto st=runtime::step::forward(grid,&state,false);!st)return st;}
+    for(int i=0;i<n_links;++i){auto* q=links.data()+8*i;if(auto st=architecture::set_remote_link(grid,q[0],q[1],q[2],q[3],q[4],q[5],q[6],q[7]);!st)return st;}
+    for(int t=0;t<ticks;++t){runtime::step::set_input(&state,input);if(auto st=runtime::step::forward(grid,&state,true);!st)return st;posts.push_back(state.layer_data);}
+    post=state.layer_data.back();
+    if(auto st=runtime::training::mse(post,target,&loss);!st)return st;
+    TensorF32 gy;if(auto st=runtime::training::mse_grad(post,target,&gy);!st)return st;
+    if(auto st=runtime::step::backward(grid,&state,gy,&gin,&grads);!st)return st;
+    if(auto st=runtime::step::apply_sgd(grid,grads,lr);!st)return st;
+    weights.resize(coords.size());
+    for(size_t i=0;i<coords.size();++i)if(enabled[i]){
+      auto child=take_mesh_child(grid.cells[i]);weights[i].resize(stack::child_grad_w_size(child));
+      if(!weights[i].empty())if(auto st=stack::child_export_f32(child,weights[i].data());!st)return st;
+    }
+    return Status::Ok();
+  };
+  const auto start=std::chrono::steady_clock::now();
+  for(int i=0;i<(bench_iters>0?bench_iters:1);++i)if(auto st=once();!st){std::fprintf(stderr,"mesh BPTT: %s\n",st.message.c_str());return 1;}
+  if(bench_iters>0){int64_t ns=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-start).count();int32_t n=bench_iters;if(!write_magic("WVB1")||!write_exact(&ns,1)||!write_exact(&n,1))return 2;}
+  if(!write_magic("MGBO")||!write_exact(&loss,1)||!write_mesh_tensor(post)||!write_mesh_tensor(gin))return 2;
+  int32_t n=int(coords.size());if(!write_exact(&n,1))return 2;
+  for(int i=0;i<n;++i){auto packed=grads[i];if(!packed.data.empty())packed.shape={int64_t(packed.data.size())};if(!write_mesh_tensor(packed))return 2;int32_t size=int(weights[i].size());if(!write_exact(&size,1)||!write_exact(weights[i].data(),weights[i].size()))return 2;}
+  if(!write_exact(&ticks,1))return 2;
+  for(int t=0;t<ticks;++t)for(int i=0;i<n;++i)
+    if(!write_mesh_tensor(state.history_in[t][i])||!write_mesh_tensor(state.history_pre[t][i])||!write_mesh_tensor(posts[t][i]))return 2;
+  return 0;
+}

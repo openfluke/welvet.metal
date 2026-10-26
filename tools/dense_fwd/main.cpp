@@ -1598,6 +1598,7 @@ int main(int argc, char** argv) {
   if (std::memcmp(magic, "STB1", 4) == 0) {
     return run_stepbp(bench_iters);
   }
+  if (std::memcmp(magic,"MGB1",4)==0) return run_mesh_generic_bp(bench_iters);
   if (std::memcmp(magic, "MBP1", 4) == 0) {
     return run_meshbp(bench_iters);
   }

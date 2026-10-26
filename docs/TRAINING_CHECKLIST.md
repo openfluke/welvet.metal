@@ -419,7 +419,7 @@ GDN branches retain the declared ≥strict weight floor, exact packed lengths,
 and finite loss band. Benchmark outputs must match independent fresh outputs.
 KMeans volume input gradients retain the narrow cancellation band declared
 above. GPU-only probes also exercise KMeans/Parallel mesh SGD. Full mesh-clock
-Go parity remains a separate section 7 gate. Full residency and throughput
+Go parity is validated separately in section 7. Full residency and throughput
 remain separate work.
 
 ---
@@ -459,8 +459,8 @@ sections 2–6 extension evidence above.
 
 **Scope:** volume rows deliberately reuse the NormalBP volume fixtures because
 Go's grid ModeMeshBP uses that same Forward+Step path. They do not establish
-mesh-clock BPTT parity for non-Dense cells. The generic mesh runtime dispatches
-supported GPU layers, but the mesh-clock wire and its parity sign-off cover Dense.
+mesh-clock BPTT parity for non-Dense cells. The separate `MGB1` all-family
+clock fixtures and section 7 provide that evidence.
 KMeans and Parallel are signed off for Line/shared-volume credit above. No CPU fallback is supplied.
 
 **Validated:** 2026-10-26, unreleased. Precision policy above applies. Benchmark
@@ -764,7 +764,7 @@ Chain-rule Backward + ApplyGradSGD. Start here. Dense first.
 | Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** all 23 NormalBP layer families validated inside nodes and in volumes, including dtype coverage (GDN Float32 only), under the precision policy above. KMeans and Parallel are included, with the declared KMeans cancellation band. The complete NormalBP and Metal-only regression passed 219 case groups in 171.771 seconds; shared and static builds passed. StepBP Line and the requested MeshBP evidence are validated below; non-Dense mesh-clock parity remains separate.
+**Checkpoint:** all 23 NormalBP layer families validated inside nodes and in volumes, including dtype coverage (GDN Float32 only), under the precision policy above. KMeans and Parallel are included, with the declared KMeans cancellation band. The complete NormalBP and Metal-only regression passed 219 case groups in 171.771 seconds; shared and static builds passed. StepBP Line and all-family MeshBP clock evidence are validated below.
 
 ---
 
@@ -950,34 +950,74 @@ Ship: `runtime/line` Credit::FamilyBP on pop (same credit as StepBP / TweenChain
 
 ## 7 — MeshBP
 
-Grid tick FamilyBP: `runtime/step` Forward×ticks + Backward BPTT + ApplyGradSGD (`MBP1`/`MBPO` for Dense mesh-clock).  
-Go ModeMeshBP on grid also = volume Forward+Step (cameral_train). Dense mesh-clock is validated at 111/211/222 Float32 and 111/222 ×34, plus disabled/remote routing. All supported families have shared volume-path evidence at 222 Float32 and 211 ×34 (GDN Float32 only). Non-Dense mesh-clock parity remains unverified.
+Grid tick FamilyBP: `runtime/step` Forward×ticks → reverse-time Backward BPTT →
+ApplyGradSGD. `MGB1`/`MGBO` binds actual heterogeneous node kinds; existing
+`MBP1`/`MBPO` Dense fixtures remain covered. Numerical forward, loss, backward,
+gradient joins and native SGD use Metal kernels. Host code schedules ticks,
+stores tapes, stages buffers and rebuilds benchmark fixtures.
+
+Run: `./scripts/macos_build_w2a.sh --meshbp-train`.
+The runner includes `TestGoVMetalMeshBPTrain` (**103 case groups**), the existing StepBP/volume suite,
+NormalBP and the Metal-only guard. Go ModeMeshBP on grid also uses the shared
+volume Forward+Step path validated at 222 Float32 and 211 ×34.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
 | Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| RMSNorm | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| LayerNorm | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| SwiGLU | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| Softmax | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| Embedding | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| MHA | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| CNN1 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| CNN2 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| CNN3 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| ConvT1 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| ConvT2 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| ConvT3 | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| RNN | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| LSTM | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| Sequential | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| Residual | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| Metacognition | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| GDN | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [x] | [ ] | volume path validated; mesh-clock parity pending |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+
+**Validated:** 2026-10-26, unreleased. The 103 MeshBP case groups passed in
+111.72 seconds with at least two measured replay iterations per fixture. The
+combined runner passed in 372.500 seconds, including 134 StepBP groups, all
+219 NormalBP groups, and the Metal-only guard. Shared and static builds passed.
+
+**Checkpoint:** All 23 supported families have actual mesh-clock node and grid
+BPTT evidence. All 22 dtype-generic families cover 111 and 211 ×34; GDN is
+Float32-only. Every family also covers 222 Float32. Shape-changing Embedding
+uses a single-tick 111 node and disabled ingress plus RMSNorm adapter nodes in
+grids; its integer indices are not fed back as embedding outputs. Remote
+self-links cover the 22 shape-preserving families with detached warmup followed
+by captured ticks. SwiGLU uses a shorter bounded recurrent trajectory to avoid
+vanishing intermediate subnormals outside the declared GPU precision contract.
+
+Both KMeans outputs and all seven Parallel combines additionally cover ×34
+three-node clock chains, including shape-changing Concat/probabilities→Dense
+and Filter gate gradients/updates. Dense/KMeans/Parallel zero-lr cases preserve
+native weights across ×34; `step::apply_sgd(0)` is a no-op.
+
+Checks include every captured node input/pre/post, final output/loss, oldest
+input gradient, packed accumulated parameter gradients, and post-SGD native
+weights. Parameter gradients use a flat packed axis for comparison; activation
+and input-gradient shapes remain strict. Existing precision policy applies:
+GDN tensors ≥loose and updated weights ≥strict, MHA gradients ≥strict, Softmax
+gradients ≥loose, other gates exact or the documented FP32 subnormal policy.
+Only KMeans input gradients use its narrow near-zero cancellation allowance.
+Fresh and benchmark Metal runs must match exactly across all exported tensors,
+loss, weights and tapes. MeshBP measures at least two iterations to exercise
+reset between repetitions. Replay timing includes rebuilding/staging; residency
+and performance tuning retain separate gates. MeshTween/other modes retain
+their own clock sign-off below.
 
 ## 8 — MeshTween
 
@@ -1650,7 +1690,8 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
-| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. Non-Dense mesh-clock parity remains open. ModeTween: 80 case groups, supported leaf/volume dtypes, Metal projection/local credit and benchmark reset checks passed. ModeTweenChain: 80 groups, supported leaf/volume dtypes, full-lr chain-rule credit and true input gradients validated. Eight requested Split/Alt/Step/Mesh sections: 576 groups; tiny-SGD preservation and credit/phase primitives verified. |
+| Unreleased — MeshBP section 7 | All 23 actual node kinds: 103 clock groups, 111/211 supported dtypes and 222 Float32; recurrent remote links, both KMeans outputs, all Parallel combines, zero-lr native preservation and exact two-iteration replay. Combined MeshBP/StepBP/NormalBP/Metal-only runner passed in 372.500s; shared/static builds passed. |
+| Unreleased — 2026-10-26 | Metal-only NormalBP: all 17 evidence sections / 128 cases passed, covering 21 layer families and their supported dtypes. GPU native encoding/bias SGD, all Dense activations/derivatives, and primitive/cache/no-host-API checks passed. StepBP Line: all 21 supported families / dtypes; MeshBP: Dense mesh-clock ×34 and all supported volume families. Disabled/remote routing and benchmark reset checks passed. All-family MeshBP clock parity is now recorded in section 7; other mesh modes retain separate gates. ModeTween: 80 case groups, supported leaf/volume dtypes, Metal projection/local credit and benchmark reset checks passed. ModeTweenChain: 80 groups, supported leaf/volume dtypes, full-lr chain-rule credit and true input gradients validated. Eight requested Split/Alt/Step/Mesh sections: 576 groups; tiny-SGD preservation and credit/phase primitives verified. |
 | `0.19-m2-meshbp` | StepBP Line + MeshBP Go↔Metal: STB1 Line FamilyBP × kinds (+×34) + MBP1 Dense mesh-clock 111/211/222 + ModeMeshBP vol 222 for NormalBP-signed kinds (`runtime/line` + `runtime/step`; KMeans Line deferred) |
 | `0.18-m2-stack-nbp` | Stack NestedStack-of-Dense NormalBP Go↔Metal: leaf Float32+×34 + volume 111/chain/×34/222/211×34 exact_bit (`STKB`/`STKV`; Dense Dim→Dim Linear, loom n_children×[Dim×Dim]; bind_stack) |
 | `0.17-m2-gdn-nbp` | GDN NormalBP Go↔Metal: leaf ≥loose + volume 111/chain/222 ≥industry f32-only (`GDB1`/`GDV1`; truncated-BPTT; Metal≡cpp host f32 scan) |

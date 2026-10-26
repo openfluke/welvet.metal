@@ -120,3 +120,5 @@ int run_parallel_poly_train(int);
 int run_volume_parallel_normalbp(int, VolumeTrainMode mode = VolumeTrainMode::NormalBP);
 
 int run_normalbp_child(int);
+
+int run_mesh_generic_bp(int bench_iters);

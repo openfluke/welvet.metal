@@ -298,7 +298,7 @@ Status backward(architecture::Grid& g, State* s, const TensorF32& grad_out, Tens
 
 Status apply_sgd(architecture::Grid& g, const std::vector<TensorF32>& layer_dws, double lr) {
   if (lr == 0.0) {
-    return Status::Err(StatusCode::InvalidArgument, "step: LR is 0");
+    return Status::Ok();
   }
   const int n = static_cast<int>(g.cells.size());
   for (int i = 0; i < n && i < static_cast<int>(layer_dws.size()); ++i) {

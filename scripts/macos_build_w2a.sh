@@ -18,6 +18,7 @@ echo "WELVET_METAL_DENSE_FWD=$WELVET_METAL_DENSE_FWD"
 MODE=""
 for arg in "$@"; do
   case "$arg" in
+    --meshbp-train) MODE="meshbp_train" ;;
     --step-tween-all) MODE="step_tween_all" ;;
     --normalbp-all) MODE="normalbp_all" ;;
     --metal-only) MODE="metal_only" ;;
@@ -51,6 +52,7 @@ for arg in "$@"; do
     --tween-train) MODE="tween_train" ;;
     --stepbp-train) MODE="stepbp_train" ;;
     --help|-h)
+      echo "MeshBP: --meshbp-train (all-family clock + StepBP/volume + NormalBP + Metal-only checks)"
       echo "training modes 2–6: --step-tween-all (complete NormalBP + five requested modes + Metal-only checks)"
       echo "training batch: --tween-next-all (eight requested modes + Metal-only checks)"
       echo "usage: $0 [--normalbp-all|--metal-only|--dense-train|…|--stack-train|--stepbp-train|--tween-train|--tweenchain-train]"
@@ -59,6 +61,12 @@ for arg in "$@"; do
       ;;
   esac
 done
+
+if [[ "$MODE" == "meshbp_train" ]]; then
+  export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"
+  go test ./tests/go_v_metal -v -count=1 -run '^(TestGoVMetalMeshBPTrain|TestGoVMetalStepBPTrain|TestGoVMetalNormalBP|TestGoVMetalOnly)$' -timeout 45m
+  exit 0
+fi
 
 if [[ "$MODE" == "step_tween_all" ]]; then
   export WELVET_METAL_BENCH_ITERS="${WELVET_METAL_BENCH_ITERS:-1}"

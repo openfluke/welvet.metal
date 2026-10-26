@@ -24,13 +24,17 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   float64 arithmetic precision or exponent range.
 - Sequential and NestedStack: host scheduling and copies around supported GPU
   children; no host numerical training fallback.
-- Line FamilyBP uses GPU kernels for all 21 supported families, including all
+- Line FamilyBP uses GPU kernels for all 23 supported families, including all
   supported dtypes. CNN2/3 and ConvT2/3 have explicit rank-4/rank-5 tests.
-- Mesh gradient addition runs on Metal. Dense mesh-clock is tested at 111/222
-  across all 34 dtypes, at 211 Float32, and with disabled cells/remote links.
-  Shared ModeMeshBP volume Forward+Step fixtures cover all supported families
-  at 222 Float32 and 211 ×34 (GDN Float32 only). Non-Dense mesh-clock BPTT parity
-  remains unverified.
+- Mesh FamilyBP forward, reverse-time BPTT, gradient addition and SGD run on
+  Metal for all 23 supported families. Clock fixtures cover 111/211 ×34 and
+  222 Float32 (GDN Float32 only), disabled ingress, recurrent remote links,
+  all seven Parallel combines and both KMeans outputs. Every captured node
+  input/pre/post, accumulated parameter gradient, oldest input gradient and
+  updated weight is compared to Go under the checklist precision policy.
+  Zero lr preserves native weights. Benchmark replay must match exactly and
+  runs at least two measured iterations to verify reset between repetitions.
+  Shared ModeMeshBP volume Forward+Step fixtures retain separate coverage.
 - Tween ModeTween uses Metal block-average gap projection and local backward/SGD
   at lr×0.5. Sequential/Residual expand Dense leaves; NestedStack retains the
   original forward inputs during local updates. All 21 supported families have
@@ -90,8 +94,8 @@ remain on Metal. Shared volume credit and mesh-clock parity have separate gates.
 
 The complete `--step-tween-all` run passed 654 requested-mode groups, all 219
 NormalBP groups and the Metal-only guard. The guard also executes mesh SGD for
-KMeans/Parallel, while full Go mesh-clock parity remains separate. Other modes
-retain their own KMeans/Parallel validation gates. No build flag or runtime
+KMeans/Parallel; full Go MeshBP clock parity is covered by `--meshbp-train`.
+Other modes retain their own KMeans/Parallel validation gates. No build flag or runtime
 setting enables a CPU numerical fallback.
 
 Host code handles allocation, validation, graph scheduling, tensor copies, storage
@@ -107,6 +111,7 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/build_macos.sh
 ./scripts/macos_build_w2a.sh --normalbp-all
 ./scripts/macos_build_w2a.sh --stepbp-train
+./scripts/macos_build_w2a.sh --meshbp-train
 ./scripts/macos_build_w2a.sh --tween-train
 ./scripts/macos_build_w2a.sh --tweenchain-train
 ./scripts/macos_build_w2a.sh --tween-next-all
@@ -115,14 +120,14 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 Tests and CPU parity references live in sibling `w2a`, not the engine repository.
 `TestGoVMetalOnly` checks rejected CPU APIs, GPU loss/gradients/updates,
 accumulation, repeated weight updates/cache refresh, Dense volumes, and the
-supported Float32 line/mesh cases. `TestGoVMetalNormalBP` runs all 17 requested
-NormalBP groups / 128 case checks. The combined runner executes both gates and
+supported Float32 line/mesh cases. `TestGoVMetalNormalBP` runs all 19 evidence sections / 219 case groups. The combined runner executes both gates and
 defaults to one measured iteration per fixture. The StepBP runner executes
-`TestGoVMetalStepBPTrain` (84 case groups, with dtype sweeps) and `TestGoVMetalOnly`.
-The Tween runner executes `TestGoVMetalTweenTrain` (80 case groups, including
-leaf/volume dtype sweeps) and `TestGoVMetalOnly`, which also checks projection
+`TestGoVMetalStepBPTrain` (134 case groups, with dtype sweeps) and `TestGoVMetalOnly`.
+The MeshBP runner executes 103 all-family clock case groups plus StepBP/shared-volume,
+NormalBP and Metal-only regressions. The Tween runner executes
+`TestGoVMetalTweenTrain` (130 case groups, including leaf/volume dtype sweeps) and `TestGoVMetalOnly`, which also checks projection
 and nested local credit. The TweenChain runner executes
-`TestGoVMetalTweenChainTrain` (80 case groups with leaf/volume dtype sweeps) plus
+`TestGoVMetalTweenChainTrain` (130 case groups with leaf/volume dtype sweeps) plus
 `TestGoVMetalOnly`, including hand-calculated chain-rule/full-rate checks.
 The `--tween-next-all` batch covers the eight requested Split/Alt/Step/Mesh sections
 (576 groups) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
