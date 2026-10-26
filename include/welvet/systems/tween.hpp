@@ -11,6 +11,16 @@
 
 namespace welvet::systems::tween {
 
+// Captured trainable leaves shared by Tween and TweenSplit. Collection completes
+// before any update, including nested Parallel branches and its Filter gate.
+struct ProjectedLeaf {
+  stack::Child* child = nullptr;
+  dense::Layer* dense = nullptr;
+  TensorF32 input, pre, post;
+};
+Status collect_leaves(stack::Child& child, const TensorF32& input,
+                      std::vector<ProjectedLeaf>* leaves, TensorF32* output);
+
 // Resize global gap onto dst shape (Go parallel.projectGap — block average).
 Status project_gap(const TensorF32& src, const std::vector<int64_t>& dst_shape, TensorF32* out);
 

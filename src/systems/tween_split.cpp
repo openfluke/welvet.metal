@@ -11,6 +11,8 @@
 #include "welvet/convt2.hpp"
 #include "welvet/convt3.hpp"
 #include "welvet/dense.hpp"
+#include "welvet/kmeans.hpp"
+#include "welvet/parallel.hpp"
 #include "welvet/embedding.hpp"
 #include "welvet/layernorm.hpp"
 #include "welvet/lstm.hpp"
@@ -134,9 +136,9 @@ Status apply_cell_dw(architecture::Cell& cell, const TensorF32& dW, double lr) {
   case architecture::OpKind::GDN:
     return gdn::apply_grad_sgd(&cell.gdn_op, dW, lr);
   case architecture::OpKind::KMeans:
-    return Status::Gap("TweenSplit KMeans on Metal");
+    return kmeans::apply_grad_sgd(&cell.kmeans_op, dW, lr);
   case architecture::OpKind::Parallel:
-    return Status::Gap("TweenSplit Parallel on Metal");
+    return parallel::apply_grad_sgd(&cell.parallel_op, dW, lr);
   default:
     return Status::Ok();
   }
@@ -191,6 +193,22 @@ Status collect_res_dense(residual::Layer& layer, const TensorF32& input, std::ve
 
 Status collect_child(stack::Child& c, const TensorF32& input, std::vector<Leaf>* out,
                      TensorF32* output = nullptr) {
+  if (c.kind == stack::Kind::Parallel) {
+    std::vector<systems::tween::ProjectedLeaf> captured;
+    TensorF32 post;
+    if (auto st = systems::tween::collect_leaves(c, input, &captured, &post); !st) return st;
+    for (auto& source : captured) {
+      Leaf leaf;
+      leaf.child = source.child;
+      leaf.dense = source.dense;
+      leaf.input = std::move(source.input);
+      leaf.pre = std::move(source.pre);
+      leaf.post = std::move(source.post);
+      out->push_back(std::move(leaf));
+    }
+    if (output) *output = std::move(post);
+    return Status::Ok();
+  }
   if (c.kind == stack::Kind::Sequential || c.kind == stack::Kind::Residual) {
     const TensorF32 original = input;
     const size_t start = out->size();

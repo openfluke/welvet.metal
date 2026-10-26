@@ -556,24 +556,47 @@ tuning remain open; benchmark timings include fixture reset.
 
 ## w2a Go↔Metal (TweenSplit ModeTweenSplit) — sign-off evidence
 
-Run: `./scripts/macos_build_w2a.sh --tweensplit-train`  
-Batch: `./scripts/macos_build_w2a.sh --tween-next-all` (all eight requested sections + Metal-only checks).
+Run: `./scripts/macos_build_w2a.sh --tweensplit-train`.
+The runner includes TweenSplit, ModeTween, TweenAlt and Metal-only regressions.
+`TestGoVMetalTweenSplitTrain` contains **131 case groups**: the existing 80 plus
+51 KMeans/Parallel groups. Wires: `TSB1`/`TSBO`; existing per-kind Split volumes
+plus `KMSP`/`KMSO` and `PNSP`/`PNSO`.
 
-Wires: `TSB1`/`TSBO`; volume `TSP1`/`TSPO` and per-kind Split variants. `TestGoVMetalTweenSplitTrain`: **80 case groups**.
-
-Single collect tape; global 1/N share at full lr. Numerical work uses Metal kernels; host code handles scheduling, tapes and staging.
+Single collect tape; global 1/N share at full lr. All numerical forward, loss,
+projection, 1/N scaling, local backward and native SGD work uses Metal kernels.
+Host code collects tapes, schedules leaves and stages buffers. No chain-rule
+input gradient is claimed for this mode.
 
 | Evidence | Status | Scope |
 |---|:---:|---|
-| Dense multi-hop Float32 | [x] | Loss and updated weights; frozen Line gap where applicable |
-| All supported leaf families | [x] | 21 families; 20 ×34 dtype sweeps, GDN Float32 only |
-| CNN2/3 and ConvT2/3 | [x] | Explicit rank-4/rank-5 ×34 fixtures |
-| Volume 222 Float32 | [x] | All 21 supported families |
-| Volume 211 ×34 | [x] | All 20 dtype-generic families; shared parent volume credit for Line variants |
-| Benchmark reset | [x] | Every leaf dtype sweep compares measured-run output with an independent fixture |
-| Collect/phase primitives | [x] | Hand-calculated 1/N sharing and refreshed Alt loss/weights; input tape retained |
+| All 23 supported families | [x] | Native dtype sweeps for the 22 generic families; GDN Float32 only |
+| Both KMeans outputs | [x] | Probabilities / Features, Float32 and ×34, including shape-changing KMeans→Dense |
+| Seven Parallel combines | [x] | Float32 and ×34; Filter gate counts as a trainable leaf; Concat→Dense width changes |
+| Polymorphic Parallel | [x] | All 23 branch kinds Float32, including nested Stack/Parallel and rank-4/rank-5 convolutional branches |
+| Stateful Filter | [x] | Metacognition capture and gate update; complete tape before SGD |
+| Mixed weightless/trainable leaves | [x] | Dense + Softmax Parallel followed by Dense ×34; Softmax excluded from N |
+| Shared volume credit | [x] | All 23 families; KMeans/Parallel 111/chain/211 ×34 and 222 Float32 |
+| Benchmark reset | [x] | Fresh loss/weights match measured runs; all new leaf and volume fixtures require exact Metal replay across at least two iterations |
+| Collect primitives | [x] | Existing hand-calculated 1/N sharing and tape preservation guards |
 
-**Validated:** 2026-10-26, unreleased. Exact tensors and the finite Metal loss band apply where specified; GDN leaf weights require ≥strict. Global GDN Alt refreshed loss uses its finite `1e-5` relative band. Volume subnormal weight differences retain the existing policy. Float32 SGD now preserves encoded subnormal steps across phases so normal-range results still pass the exact gate. KMeans/Parallel remain unverified for this mode. Full graph residency and performance tuning remain open.
+Parallel leaf-mode Split recursively collects trainable branches, nested
+containers, Sequential/Residual Dense leaves and the Filter gate. It reuses
+Tween's collector, including Filter's extra forward and state transitions;
+updates begin only after collection. Split loss is scored from the collected
+output, whose native branch axes can differ from regular Parallel Forward.
+The Go fixture discovers target shapes through Go's public `OpenSplitTape`.
+Volume Split retains its existing grid contract: each placed KMeans/Parallel
+cell is one local backward/SGD unit; Sequential/Residual expand Dense children.
+
+Existing precision gates apply: finite loss band, exact native weights or the
+documented FP32 subnormal policy. GDN leaf/Parallel branch weights retain
+≥strict and GDN shared volumes retain ≥industry. No precision gates were
+weakened. Other Split/Alt modes retain their separate sign-off sections. Full
+residency and throughput tuning remain separate work.
+
+**Validated:** 2026-10-26, unreleased. All 131 TweenSplit groups passed. The
+combined run also passed 130 ModeTween groups, 80 TweenAlt groups and Metal-only
+guards in 191.609 seconds. Shared/static builds passed.
 
 ## w2a Go↔Metal (StepTweenSplit ModeStepTweenSplit) — sign-off evidence
 
@@ -1212,14 +1235,31 @@ CNN2/3 and ConvT2/3 have explicit ×34 leaf fixtures. Softmax weightless (N may 
 | LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| KMeans | [ ] | [ ] | [ ] | |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
-| Parallel | [ ] | [ ] | [ ] | |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 21 supported families verified in leaves and shared volumes, including supported dtypes (GDN Float32 only). GDN precision bands above apply; KMeans/Parallel remain open.
+**Checkpoint:** All 23 families are signed off in leaves and shared volumes,
+including both KMeans outputs and all seven Parallel combines. Native ×34
+sweeps cover the 22 dtype-generic families; GDN remains Float32-only. The 131
+TweenSplit groups passed in 72.47 seconds under the existing precision gates.
+
+Parallel leaf-mode Split counts all trainable branch leaves, nested Stack/Parallel
+leaves and its Filter gate before applying projected 1/N gaps at full lr. Softmax
+is excluded from N, including the mixed Dense/Softmax ×34 fixture. Capture and
+stateful Filter's extra forward finish before any update. Split loss and targets
+use the collected output's native axes, matching Go `OpenSplitTape`.
+Placed KMeans/Parallel volume cells retain the existing local-unit grid contract.
+
+All 51 new groups passed, including 111/chain/211 ×34 and 222 Float32 volumes,
+all 23 polymorphic Parallel branch kinds, stateful Filter, native SGD and exact
+fresh-versus-measured replay with at least two iterations. Numerical work uses
+Metal kernels; Go references stay in w2a. The combined TweenSplit/ModeTween/
+TweenAlt/Metal-only runner passed in 191.609 seconds; shared/static builds passed.
+Other Split/Alt mode sign-offs remain separate.
 
 ---
 
@@ -1787,6 +1827,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
+| Unreleased — TweenSplit section 10 | All 23 families: 131 groups, including 51 new KMeans/Parallel groups. Both output modes, seven combines, nested/polymorphic capture, Filter gate/state, weightless-leaf exclusion, native SGD and exact repeated leaf/volume replay. Combined TweenSplit/ModeTween/TweenAlt/Metal-only run passed in 191.609s; shared/static builds passed. |
 | Unreleased — MeshTweenChain section 9 | All 23 actual node kinds: 160 clock/shared-volume groups, supported dtypes, recurrent links, both KMeans outputs, seven Parallel combines, full-rate BPTT/SGD and exact replay. MeshBP equivalence checked directly for every family. Combined MeshTweenChain/MeshTween/ModeTweenChain/Metal-only run passed in 321.915s; shared/static builds passed. |
 | Unreleased — MeshTween section 8 | All 23 actual node kinds, both KMeans outputs and all Parallel combines: 159 clock/shared-volume groups; final-tick half-lr local credit, recurrent remote links, zero-lr native preservation and exact replay. MeshTween/MeshBP/ModeTween/Metal-only runner passed in 299.198s; shared/static builds passed. |
 | Unreleased — MeshBP section 7 | All 23 actual node kinds: 103 clock groups, 111/211 supported dtypes and 222 Float32; recurrent remote links, both KMeans outputs, all Parallel combines, zero-lr native preservation and exact two-iteration replay. Combined MeshBP/StepBP/NormalBP/Metal-only runner passed in 372.500s; shared/static builds passed. |

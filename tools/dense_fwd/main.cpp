@@ -1487,8 +1487,10 @@ int main(int argc, char** argv) {
   }
   if (std::memcmp(magic,"NBL1",4)==0)return run_normalbp_child(bench_iters);
   if (std::memcmp(magic,"KMB1",4)==0)return run_kmeans_normalbp(bench_iters);
+  if (std::memcmp(magic,"KMSP",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic,"KMTV",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::Tween);
   if (std::memcmp(magic,"KMTC",4)==0)return run_volume_kmeans_normalbp(bench_iters,VolumeTrainMode::TweenChain);
+  if (std::memcmp(magic,"PNSP",4)==0)return run_volume_parallel_normalbp(bench_iters,VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic,"PNTV",4)==0)return run_volume_parallel_normalbp(bench_iters,VolumeTrainMode::Tween);
   if (std::memcmp(magic,"PNTC",4)==0)return run_volume_parallel_normalbp(bench_iters,VolumeTrainMode::TweenChain);
   if (std::memcmp(magic,"KMV1",4)==0)return run_volume_kmeans_normalbp(bench_iters);

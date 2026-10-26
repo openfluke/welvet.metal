@@ -46,10 +46,17 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   dtypes (GDN Float32 only). The volume path shares NormalBP credit, with actual
   input gradients checked through TweenChain wires. GDN leaf updated weights
   retain ≥strict; GDN volume retains ≥industry. Step/Mesh variants have separate coverage below.
+- TweenSplit includes KMeans and Parallel across all supported native dtypes.
+  Parallel recursively captures every trainable branch leaf and its Filter gate
+  before 1/N scaling and full-lr GPU SGD. Weightless leaves do not enter N.
+  Its 131 groups include all 23 families, both KMeans outputs, seven combines,
+  all polymorphic branch kinds and placed-cell volume credit. New leaf and
+  volume cases require exact replay across at least two measured iterations.
 - TweenSplit uses one collect tape and GPU projection/scaling by 1/N at full lr.
   TweenAlt refreshes prediction and gap between Split and Tween phases (AltTimes=1
   tested). StepTween/Split/Alt use frozen popped gaps; StepTweenChain uses true BP.
-  The six leaf/Line sections each cover 80 groups, including supported leaf and
+  The other Split/Alt leaf/Line sections retain their separately listed groups,
+  including supported leaf and
   volume dtypes across all 21 supported families (GDN Float32 only).
 - MeshTween uses captured last-tick local credit at half lr. Its production
   training entry point and generic clock wire share `step::apply_tween`.
@@ -143,13 +150,16 @@ and nested local credit. The TweenChain runner executes
 `TestGoVMetalTweenChainTrain` (130 case groups with leaf/volume dtype sweeps) plus
 `TestGoVMetalOnly`, including hand-calculated chain-rule/full-rate checks.
 The `--tween-next-all` batch covers the eight requested Split/Alt/Step/Mesh sections
-(799 groups, including the expanded MeshTween and MeshTweenChain suites) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
+(950 groups, including the expanded TweenSplit, StepTween/Chain and mesh suites) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
 action flights, unsupported credit rejection and subnormal SGD storage.
 The MeshTween runner covers its 159 groups plus MeshBP, ModeTween and Metal-only
 regressions. The MeshTweenChain runner covers its 160 groups plus MeshTween,
 ModeTweenChain and Metal-only regressions. Generic clock replay uses at least
 two measured iterations and
 requires exact repeated Metal outputs and weights.
+The TweenSplit runner covers its 131 groups plus ModeTween, TweenAlt and
+Metal-only regressions. Split reuses Tween's nested leaf collector; shared
+volume Split counts placed KMeans/Parallel cells as local update units.
 Line, Tween and TweenChain benchmark iterations reset all
 weights/configuration before each run and
 return the real final loss; reset cost is included. All runners default to one

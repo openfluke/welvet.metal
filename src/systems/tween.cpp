@@ -193,12 +193,6 @@ Status apply_projected_res(residual::Layer& layer, const TensorF32& grad_out,
 
 // Capture every branch leaf before updating any weights. Filter's extra
 // forward can advance stateful rule counters, exactly as Go collectTweenLeaves.
-struct ProjectedLeaf {
-  stack::Child* child = nullptr;
-  dense::Layer* dense = nullptr;
-  TensorF32 input, pre, post;
-};
-
 Status collect_projected(stack::Child& child, const TensorF32& input,
                          std::vector<ProjectedLeaf>* leaves, TensorF32* output);
 
@@ -321,6 +315,13 @@ Status apply_projected_parallel(stack::Child& child, const TensorF32& gap,
 }
 
 } // namespace
+
+Status collect_leaves(stack::Child& child, const TensorF32& input,
+                      std::vector<ProjectedLeaf>* leaves, TensorF32* output) {
+  if (!leaves || !output)
+    return Status::Err(StatusCode::InvalidArgument, "tween: nil collect output");
+  return collect_projected(child, input, leaves, output);
+}
 
 Status project_gap(const TensorF32& src, const std::vector<int64_t>& dst_shape, TensorF32* out) {
   if (!out || dst_shape.empty() || src.data.empty())
