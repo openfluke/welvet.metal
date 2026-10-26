@@ -157,6 +157,7 @@ const std::vector<Entry> &build() {
       {"accel.ane", "backends", "gap? Apple Neural Engine / Core ML path", false},
       {"w2a.go_v_metal", "interop", "w2a all-family/native-dtype training, parity bands, replay and timings", true},
       {"nac.go_delegate", "interop", "gap? Go Welvet NAC → Metal dispatch", false},
+      {"go.metal.session", "interop", "Go nativemetal mount/train/export/SyncToGo; ABI v1, native bytes/biases, ENTITY save/reload", true},
       {"determinism.policy", "metal", "Best-effort 100% target; accepted industry-to-exact spectrum (60-100%)", true},
   };
   return k;

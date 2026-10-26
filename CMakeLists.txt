@@ -83,6 +83,7 @@ set(WELVET_CORE_SOURCES
   src/systems/tween.cpp
   src/gaps/registry.cpp
   src/interop/c_abi.cpp
+  src/interop/model_session.cpp
 )
 
 add_library(welvet_metal_obj OBJECT ${WELVET_CORE_SOURCES})

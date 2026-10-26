@@ -1,6 +1,6 @@
 #pragma once
 
-/* Stable C ABI for welvet.metal — used by w2a go_v_metal and future NAC. */
+/* Stable C ABI for welvet.metal — used by Go nativemetal and w2a go_v_metal. */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -33,13 +33,28 @@ WELVET_API int32_t welvet_metal_available(void);
 WELVET_API int32_t welvet_gaps_count(void);
 WELVET_API int32_t welvet_gaps_done(void);
 
+/* Versioned persistent model sessions. All passed buffers are copied during the
+ * call; no Go pointers are retained. Native weights remain authoritative until
+ * explicitly exported. Release sessions and output blobs with their own APIs.
+ * Model descriptor WMN1 and snapshot NWS1 are defined in docs/GO_INTEGRATION.md. */
+typedef struct welvet_model_session welvet_model_session;
+typedef struct welvet_metal_blob { uint8_t* data; size_t size; } welvet_metal_blob;
+WELVET_API int32_t welvet_model_abi_version(void);
+WELVET_API welvet_status welvet_model_mount(const uint8_t*, size_t, welvet_model_session**);
+WELVET_API welvet_status welvet_model_forward(welvet_model_session*, const uint8_t*, size_t, welvet_metal_blob*);
+WELVET_API welvet_status welvet_model_train_mse(welvet_model_session*, int32_t mode, double lr, int32_t ticks, const uint8_t*, size_t, double* loss);
+WELVET_API welvet_status welvet_model_export_weights(welvet_model_session*, welvet_metal_blob*);
+WELVET_API welvet_status welvet_model_sync(welvet_model_session*, int32_t event);
+WELVET_API void welvet_model_release(welvet_model_session*);
+WELVET_API void welvet_metal_blob_free(welvet_metal_blob*);
+
 /* One-shot Dense Metal forward (mount+execute+release internally). */
 WELVET_API welvet_status welvet_dense_forward_f32(
     int32_t batch, int32_t in, int32_t out, int32_t act, int32_t dtype, int32_t backend,
     const float* W_init, const double* bias, size_t bias_len, const float* x, float* pre,
     float* post);
 
-/* Dense NormalBP leaf: Metal forward → (MSEGrad from target | use grad_out) → host bwd → optional SGD.
+/* Dense NormalBP leaf: Metal forward → (MSEGrad from target | use grad_out) → Metal backward → optional SGD.
  * use_target: 0 = grad_or_target is gradOut; 1 = target (MSE).
  * lr == 0 skips ApplyGradSGD (W_after == W decoded).
  * Outputs: pre/post [batch*out], dX [batch*in], dW [out*in], W_after [out*in], *loss (0 if !use_target).
@@ -62,7 +77,7 @@ WELVET_API welvet_status welvet_dense_execute(welvet_dense_session* s, const flo
 
 WELVET_API void welvet_dense_release(welvet_dense_session* s);
 
-/* MHA ModeSelf forward — WVM1 wire. Q/K/V/O Dense on Metal; attn ALU host f64 (Go/cpp baseline). */
+/* MHA ModeSelf forward — WVM1 wire. Q/K/V/O Dense on Metal; Metal attention kernels. */
 WELVET_API welvet_status welvet_mha_forward_f32(
     int32_t batch, int32_t seq, int32_t d_model, int32_t num_heads, int32_t num_kv_heads,
     int32_t head_dim, int32_t max_seq_len, int32_t mask, int32_t pos, int32_t dtype, int32_t backend,
@@ -80,7 +95,7 @@ WELVET_API welvet_status welvet_mha_normalbp_f32(
     const float* grad_or_target, int32_t use_target, double lr, float* pre, float* post, float* dX,
     float* dW, float* W_after, double* loss);
 
-/* SwiGLU forward — WVS1 wire. Gate/Up/Down Dense on Metal; SiLU⊙ host f64 (Go/cpp baseline). */
+/* SwiGLU forward — WVS1 wire. Gate/Up/Down Dense on Metal; Metal SiLU/product kernels. */
 WELVET_API welvet_status welvet_swiglu_forward_f32(
     int32_t batch, int32_t seq, int32_t input_dim, int32_t intermediate_dim, int32_t dtype,
     int32_t backend, const float* Gate, const float* Up, const float* Down, const float* x,
@@ -96,7 +111,7 @@ WELVET_API welvet_status welvet_swiglu_normalbp_f32(
     const float* grad_or_target, int32_t use_target, double lr, float* pre, float* post, float* dX,
     float* dW, float* W_after, double* loss);
 
-/* RMSNorm forward — WVR1 wire. γ FormatNone×34 + host f64 RMS (Go/cpp exact_bit). */
+/* RMSNorm forward — WVR1 wire. γ FormatNone×34 + Metal RMS kernels. */
 WELVET_API welvet_status welvet_rmsnorm_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,
     const float* gamma, const float* x, float* pre, float* post);
@@ -110,7 +125,7 @@ WELVET_API welvet_status welvet_rmsnorm_normalbp_f32(
     const float* gamma_init, const float* x, const float* grad_or_target, int32_t use_target,
     double lr, float* pre, float* post, float* dX, float* dW, float* gamma_after, double* loss);
 
-/* LayerNorm forward — WVL1 wire. γ/β FormatNone×34 + host f64 mean/var (Go/cpp exact_bit). */
+/* LayerNorm forward — WVL1 wire. γ/β FormatNone×34 + Metal mean/variance kernels. */
 WELVET_API welvet_status welvet_layernorm_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, double eps, int32_t dtype, int32_t backend,
     const float* gamma, const float* beta, const float* x, float* pre, float* post);
@@ -125,7 +140,7 @@ WELVET_API welvet_status welvet_layernorm_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW,
     float* gamma_after, float* beta_after, double* loss);
 
-/* Softmax forward — WSM1 wire. All Kind variants; host stable Softmax (Go/cpp exact_bit). */
+/* Softmax forward — WSM1 wire. All Kind variants; Metal stable Softmax. */
 WELVET_API welvet_status welvet_softmax_forward_f32(
     int32_t n, int32_t dim, int32_t seq_len, int32_t kind, int32_t rows, int32_t cols,
     double temperature, double entmax_alpha, int32_t gumbel_seed, int32_t dtype, int32_t backend,
@@ -196,7 +211,7 @@ WELVET_API int32_t welvet_seqmix_mha_kind(void);
 WELVET_API int32_t welvet_seqmix_mamba_kind(void);
 WELVET_API int32_t welvet_seqmix_gdn_kind(void);
 
-/* CNN1/2/3 — WVC1/2/3 wire. Host im2col → Metal soft-double Dense → loom. */
+/* CNN1/2/3 — WVC1/2/3 wire. Metal im2col → Metal soft-double Dense → loom. */
 WELVET_API welvet_status welvet_cnn1_forward_f32(
     int32_t batch, int32_t in_c, int32_t filters, int32_t seq_len, int32_t kernel, int32_t stride,
     int32_t padding, int32_t act, int32_t dtype, int32_t backend, const float* W, const double* bias,
@@ -237,7 +252,7 @@ WELVET_API welvet_status welvet_cnn3_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
     double* loss);
 
-/* ConvT1/2/3 — WVT1/2/3 wire. Host f64 scatter + Activate (Go/cpp exact_bit). No bias. */
+/* ConvT1/2/3 — WVT1/2/3 wire. Metal scatter and activation. No bias. */
 WELVET_API welvet_status welvet_convt1_forward_f32(
     int32_t batch, int32_t in_c, int32_t filters, int32_t seq_len, int32_t kernel, int32_t stride,
     int32_t padding, int32_t output_padding, int32_t act, int32_t dtype, int32_t backend,
@@ -276,7 +291,7 @@ WELVET_API welvet_status welvet_convt3_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
     double* loss);
 
-/* RNN — WRN1 wire. packed [IH|HH|bias]; Dense soft-double + host f64 tanh. */
+/* RNN — WRN1 wire. packed [IH|HH|bias]; Dense soft-double + Metal tanh. */
 WELVET_API welvet_status welvet_rnn_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
@@ -289,7 +304,7 @@ WELVET_API welvet_status welvet_rnn_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
     double* loss);
 
-/* LSTM — WLS1 wire. packed 4×[IH|HH|bias]; Dense soft-double + host f64 gates. */
+/* LSTM — WLS1 wire. packed 4×[IH|HH|bias]; Dense soft-double + Metal gate kernels. */
 WELVET_API welvet_status welvet_lstm_forward_f32(
     int32_t batch, int32_t input_size, int32_t hidden_size, int32_t seq_len, int32_t dtype,
     int32_t backend, const float* packed, const float* x, float* pre, float* post);
@@ -302,7 +317,7 @@ WELVET_API welvet_status welvet_lstm_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
     double* loss);
 
-/* GDN (Gated DeltaNet) — WGD1 wire. Float32 FormatNone host f32 (Go exact_bit).
+/* GDN (Gated DeltaNet) — WGD1 wire. Float32 FormatNone Metal kernels.
  * packed: InQKV|InZ|InB|InA|Out|Conv|ALog|DtBias|γ. dtype ignored. */
 WELVET_API welvet_status welvet_gdn_forward_f32(
     int32_t batch, int32_t seq, int32_t hidden, int32_t num_key_heads, int32_t num_value_heads,
@@ -323,7 +338,7 @@ WELVET_API welvet_status welvet_stack_normalbp_f32(
     int32_t use_target, double lr, float* pre, float* post, float* dX, float* dW, float* W_after,
     double* loss);
 
-/* Mamba — WMB1 wire. Dense soft-double In/Out FormatNone×34 + host f64 selective scan.
+/* Mamba — WMB1 wire. Dense soft-double In/Out FormatNone×34 + Metal selective scan.
  * packed: InProj|OutProj|ALog|DSkip. */
 WELVET_API welvet_status welvet_mamba_forward_f32(
     int32_t batch, int32_t seq, int32_t d_model, int32_t d_state, int32_t expand, int32_t dtype,
@@ -369,7 +384,7 @@ WELVET_API welvet_status welvet_parallel_normalbp_f32(
     const float* x, const float* grad_or_target, int32_t use_target, double lr, float* pre,
     float* post, float* dX, float* dW, float* W_after, double* loss);
 
-/* Metacognition — WMC1 wire. Observed Dense soft-double Dim×Dim FormatNone×34 + host rules.
+/* Metacognition — WMC1 wire. Observed Dense soft-double Dim×Dim FormatNone×34 + Metal rules.
  * packed: Observed [Dim×Dim]. DefaultStabilityRules when empty. */
 WELVET_API welvet_status welvet_metacognition_forward_f32(
     int32_t batch, int32_t seq, int32_t dim, int32_t dtype, int32_t backend, const float* packed,

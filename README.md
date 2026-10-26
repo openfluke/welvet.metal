@@ -15,7 +15,10 @@ Neither backend is compiled into the other.
 
 A `1 × 1 × 1` volume is the ordinary single-cell neural-network case (layers inside that cell). Larger volumes connect cells that each hold their own layer stacks. This Metal rebuild must own and execute that same topology — not “a Dense GEMV demo with a GPU sticker.”
 
-It will run directly from C++ and through a stable C ABI. Go Welvet can later delegate via **NAC** (Native Acceleration Compute). The Metal engine must also build, load models, execute volumes, and train **without** a Go process.
+It runs directly from C++ and through a C ABI. Go Welvet can mount supported
+models through `nativemetal.Session`, train on Metal and explicitly synchronize
+parameters back for Go saving. [Build, ownership and usage](docs/GO_INTEGRATION.md).
+General NAC/backend-planner selection and native model/IO remain separate gates.
 
 | | |
 |--|--|
@@ -47,6 +50,7 @@ It will run directly from C++ and through a stable C ABI. Go Welvet can later de
 | NormalBP, all 29 numbered training modes, Grid/Line/Mesh scheduling | ✅ |
 | KMeans outputs, seven Parallel combines, nested/polymorphic branches | ✅ |
 | Freeze, Shadow, Adversarial, Memory, mixed branch credit and CamSync | ✅ |
+| Go mount → repeated Metal execution/training → explicit weight return → Go ENTITY save/reload | ✅ |
 | w2a parity, benchmark reset, GPU-only and rejected-host-API checks | ✅ |
 | Persistent graph/tape residency and fused training | 🚧 |
 | Packed quant formats, model/IO and remaining systems | ⬜ |
@@ -602,15 +606,18 @@ workloads. Persistent graph/tape residency and fusion remain separate gates.
 
 | Surface | Status |
 |---|:---:|
-| ABI negotiation / version | 🚧 version `0.68`; general descriptor negotiation open |
+| ABI negotiation / version | ✅ engine `0.68`, mounted-model ABI v1; unsupported versions rejected |
 | Metal init / available / identity | ✅ |
 | Gaps census counters | ✅ |
-| Tensor / weight / layer descriptors | ⬜ |
-| Engine/model handles (volume create/load/train/checkpoint) | ⬜ |
+| Tensor / weight / layer descriptors | ✅ versioned supported-baseline descriptors; native payloads preserved |
+| Mounted model handles (layer/Stack/Parallel/Grid) | ✅ create, execute/train, explicit parameter export and release |
+| Go weight pull / ENTITY save and reload | ✅ `nativemetal.SyncToGo`; [integration evidence](docs/GO_INTEGRATION.md) |
+| Portable native model/optimizer checkpoint | ⬜ |
 | Dense forward / NormalBP wire magics (w2a) | ✅ w2a wire tool |
 | All layer NormalBP magics (mirror welvet.cpp names) | ✅ w2a wire tool |
 | Volume / Step / Mesh / Tween* magics | ✅ w2a wire tool |
-| Go NAC dispatcher selects Metal | ⬜ |
+| Explicit Go Metal session + independent library loading | ✅ `-tags welvet_metal` removes CPU sibling linkage |
+| General Go NAC / Exec.Backend planner auto-selects Metal | ⬜ |
 
 Boundary rules match welvet.cpp: versioned descriptors, opaque handles, no C++ exceptions through C, explicit ownership, async inputs owned/copied, provenance in traces.
 

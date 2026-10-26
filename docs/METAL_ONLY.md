@@ -230,7 +230,11 @@ Default execution does not read the source checkout or need a separate `.metal`
 file. Explicit shader reload paths remain a development API.
 
 Building this native backend currently requires CMake, an Apple Clang C++/ObjC++
-toolchain and Apple's SDK/frameworks. Go is needed for w2a and future Go integration.
+toolchain and Apple's SDK/frameworks. Go is needed for w2a and the Go binding.
 A generic LLVM installation alone does not replace the Apple SDK. A distributed
 prebuilt backend should remove the need for end users to build CMake sources;
-Go embedding/loading and release packaging remain future work.
+Go's `nativemetal` binding now loads the packaged library and owns persistent
+mounted sessions with explicit native parameter return. Go ENTITY saving after
+pull is verified. General NAC/Exec.Backend auto-selection, native checkpoints
+and clean-environment release distribution remain separate gates. See
+[GO_INTEGRATION.md](GO_INTEGRATION.md).
