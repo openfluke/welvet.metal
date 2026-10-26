@@ -66,6 +66,14 @@ fixture-policy correction and the accepted 60–100% proxy volume policy.
 Shared/static builds passed. Run `./scripts/macos_build_w2a.sh --training-11-24-all`
 to execute the complete batch.
 
+**Sections 25–29 completed 2026-10-26:** 352 new Line groups: 69 each for
+Linear, FastProxy, Async and Sparse, and 76 for LinearCache. Includes all
+23 families, supported native dtypes, pipeline warmup/pops, stateful Filter,
+polymorphic branches, exact same-backend replay and seven 26-tick cache-refresh
+cases. Shared volume evidence reuses the parent proxy paths above. Shared/static
+builds and GPU-only guards passed. The 352-group Line/guard run passed in
+603.623 seconds. All 29 numbered mode tables are checked.
+
 **Fixture precision policy:** exact tensor bits where required by each case; finite loss
 uses `abs(go-metal) <= 1e-12 * max(1, abs(go))`. NormalBP weight comparisons allow
 FP32 subnormal flushing only when both values are below the smallest normal
@@ -95,7 +103,12 @@ modes remain unchecked.
 
 Tick `[x]` when validated. **Ver** records a release tag when one exists, otherwise a dated unreleased validation. **Fully signed off** requires every supported dtype, not only Float32 smoke coverage.
 
-**Current engine:** run `./scripts/macos_build_w2a.sh --normalbp-all` to build
+**All 29 training modes:** run `./scripts/macos_build_w2a.sh --training-all`
+to build and run the full training matrix plus Metal-only regressions.
+Run `./scripts/macos_build_w2a.sh --training-25-29-all` for the final five Line
+modes, shared proxy volumes and Metal-only guard.
+
+**NormalBP subset:** run `./scripts/macos_build_w2a.sh --normalbp-all` to build
 Metal and run both `TestGoVMetalNormalBP` and `TestGoVMetalOnly` in sibling `w2a`.
 Run `./scripts/macos_build_w2a.sh --step-tween-all` for NormalBP plus all five
 sections 2–6 and the Metal-only guard.
@@ -1782,187 +1795,207 @@ Wire: `STH1`/`STHO`. `TestGoVMetalProxyTrain/StepTweenSplitHeadProxy` covers 65 
 | Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 | Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** All 23 families passed Line HeadProxy and shared volume parity, including supported dtype sweeps, pipeline warmup/pops and replay. Numerical training runs in Metal; host code schedules and stages tapes. Line variants 25–29 remain open.
+**Checkpoint:** All 23 families passed Line HeadProxy and shared volume parity, including supported dtype sweeps, pipeline warmup/pops and replay. Numerical training runs in Metal; host code schedules and stages tapes. Line variants 25–29 are signed off below.
 
 ---
 
 ## 25 — StepTweenSplitLinear
 
-Needs Line + TweenSplitLinear.  
-Ship: `runtime/line` `Credit::FamilyTweenSplitLinear` on pop (`apply_linear_child`); wire `STL1`/`STLO`; w2a `--steptweensplitlinear-train`.  
-**3D volumetric** = ModeTweenSplitLinear / TweenSplitLinear volume credit (`LLV1`/`LRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Line per-hop credit on pop uses the shared Metal `systems::tween_split::apply_variant_child` implementation (variant 2). The popped gap stays frozen. Reverse local linear credit uses updated weights and 1/N sharing.
+
+Wire: `STL1`/`STLO`. Tests: `TestGoVMetalStepProxyTrain/StepTweenSplitLinear`; 69 groups. Includes all 23 actual families, ×34 native dtype sweeps where supported, both KMeans outputs, seven Parallel combines, polymorphic branches and Filter state. CNN2/3 and ConvT2/3 use explicit rank-4/rank-5 fixtures.
+
+**3D volumetric:** the corresponding parent proxy mode from section 15 uses `PGB1`/`PGVO` variant 2 and `TestGoVMetalProxyVolumeTrain`: 111/211 supported native dtypes and 222 Float32. This is shared volume credit, separate from the Line clock.
+
+Run: `./scripts/macos_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 23 families and supported FormatNone dtypes passed (GDN Float32 only). Line loss/weights use the accepted 60–100% determinism spectrum; shapes/counts and same-backend replay retain their checks. Four Filter fixtures cover warmup and individual pipeline pops. Shared volume evidence comes from the corresponding parent proxy suite. Numerical training remains Metal-only; residency and performance tuning are separate work.
 
 ---
 
 ## 26 — StepTweenSplitFastProxy
 
-Needs Line + TweenSplitFastProxy.  
-Ship: `runtime/line` `Credit::FamilyTweenSplitFastProxy` on pop (`apply_fast_proxy_child`); wire `STF1`/`STFO`; w2a `--steptweensplitfastproxy-train`.  
-**3D volumetric** = ModeTweenSplitFastProxy / TweenSplitFastProxy volume credit (`FPV1`/`FRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Line per-hop credit on pop uses the shared Metal `systems::tween_split::apply_variant_child` implementation (variant 3). The popped gap stays frozen. The local head proxy is captured before the head update, then shared across hidden leaves.
+
+Wire: `STF1`/`STFO`. Tests: `TestGoVMetalStepProxyTrain/StepTweenSplitFastProxy`; 69 groups. Includes all 23 actual families, ×34 native dtype sweeps where supported, both KMeans outputs, seven Parallel combines, polymorphic branches and Filter state. CNN2/3 and ConvT2/3 use explicit rank-4/rank-5 fixtures.
+
+**3D volumetric:** the corresponding parent proxy mode from section 16 uses `PGB1`/`PGVO` variant 3 and `TestGoVMetalProxyVolumeTrain`: 111/211 supported native dtypes and 222 Float32. This is shared volume credit, separate from the Line clock.
+
+Run: `./scripts/macos_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 23 families and supported FormatNone dtypes passed (GDN Float32 only). Line loss/weights use the accepted 60–100% determinism spectrum; shapes/counts and same-backend replay retain their checks. Four Filter fixtures cover warmup and individual pipeline pops. Shared volume evidence comes from the corresponding parent proxy suite. Numerical training remains Metal-only; residency and performance tuning are separate work.
 
 ---
 
 ## 27 — StepTweenSplitLinearCache
 
-Needs Line + TweenSplitLinearCache.  
-Ship: `runtime/line` `Credit::FamilyTweenSplitLinearCache` on pop (`apply_linear_cache_child`, Dense hops accel=nil); wire `SLC1`/`SLCO`; w2a `--steptweensplitlinearcache-train`.  
-**3D volumetric** = ModeTweenSplitLinearCache / TweenSplitLinearCache volume credit (`LCV1`/`CRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Line per-hop credit on pop uses the shared Metal `systems::tween_split::apply_variant_child` implementation (variant 4). The popped gap stays frozen. Eligible Parallel hops retain cached projections and GPU-produced norms between pops. Dense hops have no accelerator state. Seven 26-tick fixtures cross the 20-pop refresh boundary for every Parallel combine.
+
+Wire: `SLC1`/`SLCO`. Tests: `TestGoVMetalStepProxyTrain/StepTweenSplitLinearCache`; 76 groups. Includes all 23 actual families, ×34 native dtype sweeps where supported, both KMeans outputs, seven Parallel combines, polymorphic branches and Filter state. CNN2/3 and ConvT2/3 use explicit rank-4/rank-5 fixtures.
+
+**3D volumetric:** the corresponding parent proxy mode from section 17 uses `PGB1`/`PGVO` variant 4 and `TestGoVMetalProxyVolumeTrain`: 111/211 supported native dtypes and 222 Float32. This is shared volume credit, separate from the Line clock.
+
+Run: `./scripts/macos_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 23 families and supported FormatNone dtypes passed (GDN Float32 only). Line loss/weights use the accepted 60–100% determinism spectrum; shapes/counts and same-backend replay retain their checks. Four Filter fixtures cover warmup and individual pipeline pops. Shared volume evidence comes from the corresponding parent proxy suite. Numerical training remains Metal-only; residency and performance tuning are separate work.
 
 ---
 
 ## 28 — StepTweenSplitHeadProxyAsync
 
-Needs Line + TweenSplitHeadProxyAsync.  
-Ship: `runtime/line` `Credit::FamilyTweenSplitHeadProxyAsync` on pop (`apply_head_proxy_async_child`, Dense hops accel=nil); wire `SHA1`/`SHAO`; w2a `--steptweensplitheadproxyasync-train`.  
-**3D volumetric** = ModeTweenSplitHeadProxyAsync / TweenSplitHeadProxyAsync volume credit (`HAV1`/`ARPA`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Line per-hop credit on pop uses the shared Metal `systems::tween_split::apply_variant_child` implementation (variant 5). The popped gap stays frozen. Eligible Parallel hops retain their previous hidden proxy between pops and capture the next proxy after updating the head. Dense hops have no accelerator state.
+
+Wire: `SHA1`/`SHAO`. Tests: `TestGoVMetalStepProxyTrain/StepTweenSplitHeadProxyAsync`; 69 groups. Includes all 23 actual families, ×34 native dtype sweeps where supported, both KMeans outputs, seven Parallel combines, polymorphic branches and Filter state. CNN2/3 and ConvT2/3 use explicit rank-4/rank-5 fixtures.
+
+**3D volumetric:** the corresponding parent proxy mode from section 18 uses `PGB1`/`PGVO` variant 5 and `TestGoVMetalProxyVolumeTrain`: 111/211 supported native dtypes and 222 Float32. This is shared volume credit, separate from the Line clock.
+
+Run: `./scripts/macos_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 23 families and supported FormatNone dtypes passed (GDN Float32 only). Line loss/weights use the accepted 60–100% determinism spectrum; shapes/counts and same-backend replay retain their checks. Four Filter fixtures cover warmup and individual pipeline pops. Shared volume evidence comes from the corresponding parent proxy suite. Numerical training remains Metal-only; residency and performance tuning are separate work.
 
 ---
 
 ## 29 — StepTweenSplitSparse
 
-Needs Line + TweenSplitSparse.  
-Ship: `runtime/line` `Credit::FamilyTweenSplitSparse` on pop (`apply_sparse_child`, Dense hops accel=nil → hidden idx=0); wire `SSP1`/`SSPO`; w2a `--steptweensplitsparse-train`.  
-**3D volumetric** = ModeTweenSplitSparse / TweenSplitSparse volume credit (`SPV1`/`SRP1`…). CNN2/3 & ConvT2/3 share CNN1/ConvT1 path.
+Line per-hop credit on pop uses the shared Metal `systems::tween_split::apply_variant_child` implementation (variant 6). The popped gap stays frozen. Eligible Parallel hops rotate the selected hidden leaf between pops. Dense hops have no accelerator state; the no-state hidden selection follows Go.
+
+Wire: `SSP1`/`SSPO`. Tests: `TestGoVMetalStepProxyTrain/StepTweenSplitSparse`; 69 groups. Includes all 23 actual families, ×34 native dtype sweeps where supported, both KMeans outputs, seven Parallel combines, polymorphic branches and Filter state. CNN2/3 and ConvT2/3 use explicit rank-4/rank-5 fixtures.
+
+**3D volumetric:** the corresponding parent proxy mode from section 19 uses `PGB1`/`PGVO` variant 6 and `TestGoVMetalProxyVolumeTrain`: 111/211 supported native dtypes and 222 Float32. This is shared volume credit, separate from the Line clock.
+
+Run: `./scripts/macos_build_w2a.sh --training-25-29-all`.
 
 | Layer | Inside node | 3D volumetric | Fully signed off | Ver |
 |---|:---:|:---:|:---:|---|
-| Dense | [ ] | [ ] | [ ] | |
-| RMSNorm | [ ] | [ ] | [ ] | |
-| LayerNorm | [ ] | [ ] | [ ] | |
-| SwiGLU | [ ] | [ ] | [ ] | |
-| Softmax | [ ] | [ ] | [ ] | |
-| Embedding | [ ] | [ ] | [ ] | |
-| MHA | [ ] | [ ] | [ ] | |
-| CNN1 | [ ] | [ ] | [ ] | |
-| CNN2 | [ ] | [ ] | [ ] | |
-| CNN3 | [ ] | [ ] | [ ] | |
-| ConvT1 | [ ] | [ ] | [ ] | |
-| ConvT2 | [ ] | [ ] | [ ] | |
-| ConvT3 | [ ] | [ ] | [ ] | |
-| RNN | [ ] | [ ] | [ ] | |
-| LSTM | [ ] | [ ] | [ ] | |
-| Sequential | [ ] | [ ] | [ ] | |
-| Residual | [ ] | [ ] | [ ] | |
-| KMeans | [ ] | [ ] | [ ] | |
-| Mamba | [ ] | [ ] | [ ] | |
-| Metacognition | [ ] | [ ] | [ ] | |
-| GDN | [ ] | [ ] | [ ] | |
-| Parallel | [ ] | [ ] | [ ] | |
-| Stack | [ ] | [ ] | [ ] | |
+| Dense | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RMSNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LayerNorm | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| SwiGLU | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Softmax | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Embedding | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| MHA | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| CNN3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT1 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT2 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| ConvT3 | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| RNN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| LSTM | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Sequential | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Residual | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| KMeans | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Mamba | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Metacognition | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| GDN | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Parallel | [x] | [x] | [x] | 2026-10-26 (unreleased) |
+| Stack | [x] | [x] | [x] | 2026-10-26 (unreleased) |
 
-**Checkpoint:** — _(open)_
+**Checkpoint:** All 23 families and supported FormatNone dtypes passed (GDN Float32 only). Line loss/weights use the accepted 60–100% determinism spectrum; shapes/counts and same-backend replay retain their checks. Four Filter fixtures cover warmup and individual pipeline pops. Shared volume evidence comes from the corresponding parent proxy suite. Numerical training remains Metal-only; residency and performance tuning are separate work.
 
 ---
 
@@ -1974,6 +2007,7 @@ unreleased validation and checked tables above describe current Metal evidence.
 
 | Tag | Notes |
 |---|---|
+| Unreleased — sections 25–29 | Finished all five Line proxy variants using shared Metal credit, GPU norm/cache rescaling and native SGD. 352 new all-family/native-dtype groups, pipeline-pop controls and all-combine cache-refresh fixtures passed; shared/static builds and GPU-only guard passed. Shared volumes reuse sections 15–19. CPU↔GPU parity accepts the 60–100% project spectrum. Full runner: `--training-all`. |
 | Unreleased — sections 11–24 | All 23 families signed off in StepTweenSplit, TweenAlt, StepTweenAlt, six proxy/cache/sparse modes, four mesh-clock modes and Line HeadProxy. Restored missing section headings 14–23. Direct native-dtype, stateful replay, cache-refresh and pipeline-pop evidence is in the combined `--training-11-24-all` runner; shared/static builds passed. |
 | Unreleased — TweenSplit section 10 | All 23 families: 131 groups, including 51 new KMeans/Parallel groups. Both output modes, seven combines, nested/polymorphic capture, Filter gate/state, weightless-leaf exclusion, native SGD and exact repeated leaf/volume replay. Combined TweenSplit/ModeTween/TweenAlt/Metal-only run passed in 191.609s; shared/static builds passed. |
 | Unreleased — MeshTweenChain section 9 | All 23 actual node kinds: 160 clock/shared-volume groups, supported dtypes, recurrent links, both KMeans outputs, seven Parallel combines, full-rate BPTT/SGD and exact replay. MeshBP equivalence checked directly for every family. Combined MeshTweenChain/MeshTween/ModeTweenChain/Metal-only run passed in 321.915s; shared/static builds passed. |

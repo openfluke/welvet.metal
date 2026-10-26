@@ -1556,6 +1556,11 @@ int main(int argc, char** argv) {
     return run_tween_leaf(bench_iters,static_cast<VolumeTrainMode>(4+variant));
   }
   if (std::memcmp(magic,"STH1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitHeadProxy,"STHO");
+  if (std::memcmp(magic,"STL1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitLinear,"STLO");
+  if (std::memcmp(magic,"STF1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitFastProxy,"STFO");
+  if (std::memcmp(magic,"SLC1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitLinearCache,"SLCO");
+  if (std::memcmp(magic,"SHA1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitHeadProxyAsync,"SHAO");
+  if (std::memcmp(magic,"SSP1",4)==0)return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTweenSplitSparse,"SSPO");
   if (std::memcmp(magic,"TSB1",4)==0) return run_tween_leaf(bench_iters,VolumeTrainMode::TweenSplit);
   if (std::memcmp(magic,"TAB1",4)==0) return run_tween_leaf(bench_iters,VolumeTrainMode::TweenAlt);
   if (std::memcmp(magic,"STW1",4)==0) return run_stepbp(bench_iters,welvet::runtime::line::Credit::FamilyTween,"STWO");

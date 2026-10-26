@@ -460,40 +460,48 @@ Packed layouts. Row **None** = FormatNone + DType (not “FP32 master”).
 
 ## Training modes — all 29 + cameral
 
+**All 29 numbered modes are signed off** for their supported FormatNone
+dtypes (GDN Float32 only), using the [60–100% parity target](#numerical-parity-target).
+Run the complete w2a matrix:
+
+```sh
+./scripts/macos_build_w2a.sh --training-all
+```
+
 Canonical equations: [Welvet `training_modes.md`](https://github.com/openfluke/welvet/blob/main/training_modes.md).  
 Tick **Inside node** (`1×1×1`) and **3D volumetric** separately. **Signed** = all supported FormatNone dtypes for that layer under the mode.
 
 | # | TrainMode | Family | Inside node | 3D volumetric | Signed | Ver |
 |---|---|---|:---:|:---:|:---:|---|
-| 1 | NormalBP | BP | ⬜ | ⬜ | ⬜ | |
-| 2 | StepBP | BP | ⬜ | ⬜ | ⬜ | |
-| 3 | MeshBP | BP | ⬜ | ⬜ | ⬜ | |
-| 4 | Tween | Tween | ⬜ | ⬜ | ⬜ | |
-| 5 | StepTween | Tween | ⬜ | ⬜ | ⬜ | |
-| 6 | MeshTween | Tween | ⬜ | ⬜ | ⬜ | |
-| 7 | TweenChain | TweenChain | ⬜ | ⬜ | ⬜ | |
-| 8 | StepTweenChain | TweenChain | ⬜ | ⬜ | ⬜ | |
-| 9 | MeshTweenChain | TweenChain | ⬜ | ⬜ | ⬜ | |
-| 10 | TweenSplit | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 11 | StepTweenSplit | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 12 | MeshTweenSplit | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 13 | TweenAlt | TweenAlt | ⬜ | ⬜ | ⬜ | |
-| 14 | StepTweenAlt | TweenAlt | ⬜ | ⬜ | ⬜ | |
-| 15 | MeshTweenAlt | TweenAlt | ⬜ | ⬜ | ⬜ | |
-| 16 | TweenSplitHeadProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 17 | TweenSplitLinear | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 18 | TweenSplitFastProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 19 | TweenSplitLinearCache | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 20 | TweenSplitHeadProxyAsync | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 21 | TweenSplitSparse | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 22 | MeshTweenSplitFastProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 23 | MeshTweenSplitSparse | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 24 | StepTweenSplitHeadProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 25 | StepTweenSplitLinear | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 26 | StepTweenSplitFastProxy | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 27 | StepTweenSplitLinearCache | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 28 | StepTweenSplitHeadProxyAsync | TweenSplit | ⬜ | ⬜ | ⬜ | |
-| 29 | StepTweenSplitSparse | TweenSplit | ⬜ | ⬜ | ⬜ | |
+| 1 | NormalBP | BP | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 2 | StepBP | BP | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 3 | MeshBP | BP | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 4 | Tween | Tween | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 5 | StepTween | Tween | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 6 | MeshTween | Tween | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 7 | TweenChain | TweenChain | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 8 | StepTweenChain | TweenChain | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 9 | MeshTweenChain | TweenChain | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 10 | TweenSplit | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 11 | StepTweenSplit | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 12 | MeshTweenSplit | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 13 | TweenAlt | TweenAlt | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 14 | StepTweenAlt | TweenAlt | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 15 | MeshTweenAlt | TweenAlt | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 16 | TweenSplitHeadProxy | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 17 | TweenSplitLinear | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 18 | TweenSplitFastProxy | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 19 | TweenSplitLinearCache | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 20 | TweenSplitHeadProxyAsync | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 21 | TweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 22 | MeshTweenSplitFastProxy | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 23 | MeshTweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 24 | StepTweenSplitHeadProxy | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 25 | StepTweenSplitLinear | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 26 | StepTweenSplitFastProxy | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 27 | StepTweenSplitLinearCache | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 28 | StepTweenSplitHeadProxyAsync | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
+| 29 | StepTweenSplitSparse | TweenSplit | ✅ | ✅ | ✅ | 2026-10-26 (unreleased) |
 | — | Freeze | Freeze | ⬜ | ⬜ | ⬜ | |
 | — | Shadow | Freeze | ⬜ | ⬜ | ⬜ | |
 | — | Adversarial | BP-gated | ⬜ | ⬜ | ⬜ | |

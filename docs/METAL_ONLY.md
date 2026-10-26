@@ -83,13 +83,20 @@ native artifact and C ABI. There is no dependency from one backend to the other.
   apply final-tick local credit, preserving Go's frozen-gap routing. Each has
   103 clock groups plus shared-volume coverage, supported native dtypes,
   recurrent links, zero-lr preservation and exact repeated replay.
-- Line StepTweenSplitHeadProxy is supported through section 24. Its 65 groups
-  cover all families and supported native dtypes; shared volumes use HeadProxy.
-  Line variants 25–29 still return explicit unsupported-credit errors.
+- All Line credits are supported: BP, Tween, Split, Alt and six proxy variants.
+  Sections 25–29 add Linear, FastProxy, LinearCache, HeadProxyAsync and Sparse
+  through the shared Metal credit implementation. Their 352 groups cover all
+  23 families, supported native dtypes, warmup/pops and replay. Seven 26-tick
+  Parallel cases cross the cache-refresh boundary. Eligible Parallel hops keep
+  cache/proxy/rotation state across pops; flattened Dense hops have no accelerator
+  state. Shared volumes reuse the corresponding parent proxy modes.
+  Line HeadProxy retains its separate 65 groups. Invalid credit values fail
+  before mutating the pipeline.
 - Float32 SGD encodes tiny steps in a scaled GPU representation so stored
   subnormals survive later phases that produce normal-range weights. Other
   kernel subnormal limits remain as documented. GDN loss uses
-  its existing finite relative 1e-5 band, including long cache-refresh fixtures; GDN weights still require ≥strict.
+  its existing finite relative 1e-5 band, including long cache-refresh fixtures; existing non-Step leaf GDN weight gates remain ≥strict; the new Line modes
+  use their declared 60–100% spectrum.
 - GDN uses Metal Float32 truncated-BPTT with state/conv history stop-gradient.
   Promoted reductions and transcendentals use float2 before rounding to Float32.
 
@@ -154,6 +161,8 @@ Metal targets the Apple GPU. ANE is a separate, unimplemented backend gate.
 ./scripts/macos_build_w2a.sh --tweenchain-train
 ./scripts/macos_build_w2a.sh --tween-next-all
 ./scripts/macos_build_w2a.sh --training-11-24-all
+./scripts/macos_build_w2a.sh --training-25-29-all
+./scripts/macos_build_w2a.sh --training-all
 ./scripts/macos_build_w2a.sh --meshtween-train
 ./scripts/macos_build_w2a.sh --meshtweenchain-train
 ```
@@ -173,6 +182,11 @@ and nested local credit. The TweenChain runner executes
 The `--tween-next-all` batch covers the eight requested Split/Alt/Step/Mesh sections
 (1100 groups, including the expanded TweenSplit, StepTween/Chain and mesh suites) plus GPU-only primitives for collect shares, refreshed/frozen gaps,
 action flights, unsupported credit rejection and subnormal SGD storage.
+The `--training-all` runner executes every numbered training mode (1–29),
+NormalBP and GPU-only regression guards. `--training-25-29-all` executes the
+352 new Line groups, the shared proxy volume matrix and GPU-only guards.
+The new Line comparisons use the 60–100% spectrum for CPU/GPU loss and weights,
+report deviations, and retain independent same-backend replay checks.
 The `--training-11-24-all` runner covers sections 11–24 plus TweenSplit,
 NormalBP, GPU-only primitives and 16 Line Alt pop controls. Six proxy modes
 cover 65 leaf groups each (LinearCache adds 23 refresh-boundary groups), plus

@@ -39,8 +39,8 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
     return Status::Err(StatusCode::InvalidArgument, "line: RoleTrain needs target");
   }
 
-  if (credit != Credit::FamilyBP && credit != Credit::FamilyTween &&
-      credit != Credit::FamilyTweenSplit && credit != Credit::FamilyTweenAlt && credit != Credit::FamilyTweenSplitHeadProxy) return gap_credit(credit);
+  if (static_cast<int>(credit) > static_cast<int>(Credit::FamilyTweenSplitSparse))
+    return gap_credit(credit);
   std::vector<stack::Child*> flat;
   stack::flatten_ops(ops, &flat);
   const int n = static_cast<int>(flat.size());
@@ -129,10 +129,14 @@ Status tick(stack::Layer& ops, State* st, const TensorF32& input, const TensorF3
           credit_status = systems::tween::apply_projected(child,g,input,lr*0.5);
         else if (credit == Credit::FamilyTweenSplit)
           credit_status = systems::tween_split::apply_split_child(child,g,input,lr);
-        else if(credit==Credit::FamilyTweenSplitHeadProxy)
-          credit_status=systems::tween_split::apply_variant_child(child,g,input,lr,systems::tween_split::Variant::HeadProxy);
-        else
+        else if (credit == Credit::FamilyTweenAlt)
           credit_status = systems::tween_alt::apply_alt_child(child,g,input,lr,1);
+        else {
+          // Line credits 4..9 map to the shared Metal proxy variants 1..6.
+          const auto variant = static_cast<systems::tween_split::Variant>(
+              static_cast<int>(credit) - static_cast<int>(Credit::FamilyTweenSplitHeadProxy) + 1);
+          credit_status = systems::tween_split::apply_variant_child(child,g,input,lr,variant);
+        }
         next.shape = input.shape;
         next.data.assign(input.data.size(),0.0f);
         if (g.data.size() == next.data.size()) next.data = g.data;
