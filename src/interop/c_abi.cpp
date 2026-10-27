@@ -77,8 +77,8 @@ welvet::Status make_nested_stack_dense(int dim, int n_children, welvet::Activati
 extern "C" {
 
 const char* welvet_version(void) {
-  // 0.70: Mesh* sparse-host volume fallback when step clock leaves empty output.
-  return "0.70";
+  // 0.71: @autoreleasepool on Metal hot paths — drain Shared MTLBuffer / command-buffer temps (fat_online jetsam).
+  return "0.71";
 }
 
 const char* welvet_runtime_identity(void) {

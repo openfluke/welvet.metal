@@ -77,6 +77,7 @@ Status sgd(float *weights, const void *grad, std::size_t n, double lr, bool wide
     return Status::Err(StatusCode::Unsupported,
                        "Metal SGD: learning rate exceeds soft-double range");
   std::lock_guard<std::mutex> lock(training_mu);
+  @autoreleasepool {
   id<MTLComputePipelineState> pso;
   if (auto st = prepare(wide ? "welvet_sgd_f32_f64_grad" : "welvet_sgd_f32", &pso); !st)
     return st;
@@ -104,6 +105,7 @@ Status sgd(float *weights, const void *grad, std::size_t n, double lr, bool wide
     return st;
   std::memcpy(weights, w.contents, bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 } // namespace
 
@@ -130,6 +132,7 @@ Status mse_f32(const float *pred, const float *target, std::size_t n, double *lo
     return Status::Err(StatusCode::InvalidArgument, "Metal MSE: invalid arguments");
   }
   std::lock_guard<std::mutex> lock(training_mu);
+  @autoreleasepool {
   id<MTLComputePipelineState> loss_pso = nil, grad_pso = nil;
   if (loss) {
     if (auto st = prepare("welvet_mse_loss", &loss_pso); !st)
@@ -174,12 +177,14 @@ Status mse_f32(const float *pred, const float *target, std::size_t n, double *lo
   if (grad)
     std::memcpy(grad, g.contents, bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 
 Status accumulate_f32(float *dst, const float *src, std::size_t n) {
   if (!dst || !src || !valid_size(n))
     return Status::Err(StatusCode::InvalidArgument, "Metal accumulate: invalid arguments");
   std::lock_guard<std::mutex> lock(training_mu);
+  @autoreleasepool {
   id<MTLComputePipelineState> pso;
   if (auto st = prepare("welvet_accumulate_f32", &pso); !st)
     return st;
@@ -203,5 +208,6 @@ Status accumulate_f32(float *dst, const float *src, std::size_t n) {
     return st;
   std::memcpy(dst, d.contents, bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 } // namespace welvet::metal

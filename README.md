@@ -23,7 +23,7 @@ Automatic hardware planning and native model/IO remain separate gates.
 
 | | |
 |--|--|
-| **Version** | **`0.70`** — Mesh* sparse-host train fallback; **0.69** View/Flatten |
+| **Version** | **`0.71`** — Metal `@autoreleasepool` OOM drain; **0.70** Mesh* sparse-host; **0.69** View/Flatten |
 | **Engine board** | **68 / 100** — individual feature gates aligned with the CPU sibling's accounting; independently verified on Metal |
 | **Compute** | Apple GPU (Metal) — primary · Apple Neural Engine — separate gate |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) — local Go source used by w2a |
@@ -37,7 +37,7 @@ Automatic hardware planning and native model/IO remain separate gates.
 ```bash
 ./scripts/build_macos.sh
 ./build/example_metal_smoke          # device + shader compile + buffer RT
-./build/welvet_dense_fwd --version   # 0.68
+./build/welvet_dense_fwd --version   # 0.71
 ./build/welvet_dense_fwd --identity  # metal:<Apple GPU>…
 ./build/welvet_dense_fwd --gaps
 ./scripts/macos_build_w2a.sh --training-all
@@ -607,7 +607,7 @@ workloads. Persistent graph/tape residency and fusion remain separate gates.
 
 | Surface | Status |
 |---|:---:|
-| ABI negotiation / version | ✅ engine `0.68`, mounted-model ABI v1; unsupported versions rejected |
+| ABI negotiation / version | ✅ engine `0.71`, mounted-model ABI v1; unsupported versions rejected |
 | Metal init / available / identity | ✅ |
 | Gaps census counters | ✅ |
 | Tensor / weight / layer descriptors | ✅ versioned supported-baseline descriptors; native payloads preserved |
@@ -735,7 +735,7 @@ VERSIONING.md                0.x formula
 ```
 
 The script checks that CMake, README and the runtime version agree (currently
-`0.68`, tagged `v0.68`). It builds shared/static libraries with a macOS 13 target,
+`0.71`, tagged `v0.71`). It builds shared/static libraries with a macOS 13 target,
 installs relocatable artifacts and headers, checks native Metal forward/backward/
 SGD, and writes the archive, SHA-256 checksum and generated release notes under
 ignored `dist/`. Deployment targeting is distinct from validation on older Macs.

@@ -126,6 +126,7 @@ Status dense_matvec_softdouble_batch(const float* W_xy, const float* x, float* y
   }
 
   std::lock_guard<std::mutex> lock(g_mu);
+  @autoreleasepool {
   auto st = ensure_runtime();
   if (!st) return st;
 
@@ -173,6 +174,7 @@ Status dense_matvec_softdouble_batch(const float* W_xy, const float* x, float* y
   }
   std::memcpy(y, [bufY contents], y_bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 
 Status dense_bias_act(float* pre, float* post, const float* bias_xy, int32_t bias_len,
@@ -184,6 +186,7 @@ Status dense_bias_act(float* pre, float* post, const float* bias_xy, int32_t bia
   }
 
   std::lock_guard<std::mutex> lock(g_mu);
+  @autoreleasepool {
   auto st = ensure_runtime();
   if (!st) return st;
 
@@ -236,6 +239,7 @@ Status dense_bias_act(float* pre, float* post, const float* bias_xy, int32_t bia
   std::memcpy(pre, [bufPre contents], bytes);
   std::memcpy(post, [bufPost contents], bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 
 Status resident_mount(ResidentDense* r, const float* W_xy, const float* bias_xy, int32_t bias_len,
@@ -331,6 +335,7 @@ Status resident_execute(ResidentDense* r, const float* x, float* pre, float* pos
   }
 
   std::lock_guard<std::mutex> lock(g_mu);
+  @autoreleasepool {
   auto st = ensure_runtime();
   if (!st) return st;
 
@@ -391,6 +396,7 @@ Status resident_execute(ResidentDense* r, const float* x, float* pre, float* pos
   std::memcpy(pre, [bufPre contents], y_bytes);
   std::memcpy(post, [bufPost contents], y_bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 
 Status resident_backward(ResidentDense* r, const float* grad_out, const float* input,
@@ -400,6 +406,7 @@ Status resident_backward(ResidentDense* r, const float* grad_out, const float* i
   }
 
   std::lock_guard<std::mutex> lock(g_mu);
+  @autoreleasepool {
   auto st = ensure_runtime();
   if (!st) return st;
 
@@ -482,6 +489,7 @@ Status resident_backward(ResidentDense* r, const float* grad_out, const float* i
   std::memcpy(grad_in, [bufGx contents], x_bytes);
   std::memcpy(grad_w, [bufDW contents], dw_bytes);
   return Status::Ok();
+  } // @autoreleasepool
 }
 
 void resident_release(ResidentDense* r) {

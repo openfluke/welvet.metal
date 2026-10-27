@@ -11,6 +11,7 @@
 | **0.68** | 2026-10-26: Freeze/Shadow/Adversarial/Memory, mixed Cameral branches, Stack overrides and GPU CamSync. Individual subgate audit replaces coarse 50% category accounting. |
 | **0.69** | 2026-10-27: `stack::Kind::View` / `Flatten` (wire 24/25) — zero-weight reshape for Go `parallel.View` / `Flatten` so creature Mamba/CNN/MHA mids Mount. |
 | **0.70** | 2026-10-27: Mesh* TrainMSE on sparse host grids — if step clock yields `empty mesh output`, fall back to `volume_dense` + Mesh credit family (creature 3×3×3 center cell). |
+| **0.71** | 2026-10-28: `@autoreleasepool` around Metal hot paths (`ops` / `training` / `matvec`) so Shared MTLBuffer and command-buffer temps drain — fixes progressive RSS / jetsam under long fat matrices. Engine board unchanged (68/100). |
 | **0.x** | `round-half-up(earned)` from the engine table in [README.md](README.md) |
 | **1.0.0** | Engine board **100/100** — full Go parity on Apple GPU (FormatNone path + Model/IO + Systems + CamSync + peak fused, or explicit gate rewrite) |
 

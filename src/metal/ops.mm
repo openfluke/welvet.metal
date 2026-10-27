@@ -18,6 +18,9 @@ Status run(const char *kernel, std::initializer_list<Arg> args, std::initializer
   static id<MTLCommandQueue> queue = nil;
   static std::map<std::string, id<MTLComputePipelineState>> pipelines;
   std::lock_guard<std::mutex> lock(mu);
+  // Drain ObjC/Metal temps — without this, Shared buffers + command buffers
+  // accumulate across thousands of fat_online cells until jetsam SIGKILL.
+  @autoreleasepool {
   if (auto st = library_ensure_loaded(); !st)
     return st;
   auto device = welvet_metal_device_handle();
@@ -80,5 +83,6 @@ Status run(const char *kernel, std::initializer_list<Arg> args, std::initializer
     ++idx;
   }
   return Status::Ok();
+  } // @autoreleasepool
 }
 } // namespace welvet::metal
