@@ -584,6 +584,26 @@ bool read_child(Reader &reader, welvet::stack::Child *ch) {
     }
     return true;
   }
+  case welvet::stack::Kind::View: {
+    int32_t ndim = 0;
+    if (!reader.read(&ndim, 1) || ndim <= 0 || ndim > 8)
+      return false;
+    ch->view_shape.resize(checked_count(reader, ndim));
+    for (int32_t i = 0; i < ndim; ++i) {
+      int32_t d = 0;
+      if (!reader.read(&d, 1) || d <= 0)
+        return false;
+      ch->view_shape[static_cast<std::size_t>(i)] = d;
+    }
+    return true;
+  }
+  case welvet::stack::Kind::Flatten: {
+    int32_t feat = 0;
+    if (!reader.read(&feat, 1) || feat < 0)
+      return false;
+    ch->flatten_feat = feat;
+    return true;
+  }
   default:
     std::fprintf(stderr, "welvet_dense_fwd: STB1 unsupported kind %d\n", kind);
     return false;

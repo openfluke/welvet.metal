@@ -71,6 +71,8 @@ enum class Kind : int32_t {
   GDN = 21,
   KMeans = 22,
   Parallel = 23, // nested Parallel-as-branch (nested = branches; dense_op = optional Filter gate)
+  View = 24,     // zero-weight reshape (Go parallel.View)
+  Flatten = 25,  // zero-weight reshape to [batch, feat] (Go parallel.Flatten)
 };
 
 // POD Parallel nest header (avoids circular include of parallel::Layer).
@@ -112,6 +114,8 @@ struct Child {
   kmeans::Layer kmeans_op;
   std::vector<Child> nested; // NestedStack children, or Parallel branches
   ParallelNest parallel_nest{}; // when kind == Parallel
+  std::vector<int> view_shape;  // when kind == View
+  int flatten_feat = 0;         // when kind == Flatten (0 → infer at forward)
 };
 
 struct Layer {

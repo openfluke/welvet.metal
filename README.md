@@ -23,7 +23,7 @@ Automatic hardware planning and native model/IO remain separate gates.
 
 | | |
 |--|--|
-| **Version** | **`0.68`** — working-tree milestone, 2026-10-26 |
+| **Version** | **`0.70`** — Mesh* sparse-host train fallback; **0.69** View/Flatten |
 | **Engine board** | **68 / 100** — individual feature gates aligned with the CPU sibling's accounting; independently verified on Metal |
 | **Compute** | Apple GPU (Metal) — primary · Apple Neural Engine — separate gate |
 | **Parity reference** | [welvet](https://github.com/openfluke/welvet) — local Go source used by w2a |

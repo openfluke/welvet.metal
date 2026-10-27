@@ -252,8 +252,38 @@ Status train(welvet_model_session &s, const TensorF32 &x, const TensorF32 &t,
                  : mode == TrainMode::MeshTweenSplitFastProxy ? 4
                  : mode == TrainMode::MeshTweenSplitSparse    ? 5
                                                               : 0;
-    return runtime::step::train_mse(s.grid, x, t, ticks, lr, loss,
-                                    runtime::step::Credit(credit));
+    // Dense mesh clocks (contiguous cells / enough ticks) use step BPTT.
+    auto st = runtime::step::train_mse(s.grid, x, t, ticks, lr, loss,
+                                       runtime::step::Credit(credit));
+    if (st)
+      return st;
+    // Sparse host volumes (e.g. creature 3×3×3 with one live center cell) leave
+    // layer_data.back() empty at small tick counts. Fall back to volume_dense
+    // over enabled cells with the same credit family so Mesh* Mount sessions
+    // still train.
+    const bool empty_out =
+        st.message.find("empty mesh output") != std::string::npos;
+    if (!empty_out)
+      return st;
+    if (mode == TrainMode::MeshBP || mode == TrainMode::MeshTweenChain)
+      return runtime::cameral_train::train_volume_mse(
+          s.grid, x, t, TrainMode::NormalBP, lr, loss);
+    runtime::forward::Result f;
+    if (auto fst = runtime::forward::volume_dense(s.grid, x, &f); !fst)
+      return fst;
+    if (mode == TrainMode::MeshTween)
+      return systems::tween::train_volume_mse(s.grid, f, t, lr, loss);
+    if (mode == TrainMode::MeshTweenAlt)
+      return systems::tween_alt::train_volume_mse(s.grid, x, t, lr, loss);
+    if (mode == TrainMode::MeshTweenSplit)
+      return systems::tween_split::train_volume_mse(s.grid, f, t, lr, loss);
+    if (mode == TrainMode::MeshTweenSplitFastProxy)
+      return systems::tween_split::train_volume_variant(
+          s.grid, f, t, lr, loss, systems::tween_split::Variant::FastProxy);
+    if (mode == TrainMode::MeshTweenSplitSparse)
+      return systems::tween_split::train_volume_variant(
+          s.grid, f, t, lr, loss, systems::tween_split::Variant::Sparse);
+    return st;
   }
   if (mode == TrainMode::NormalBP || mode == TrainMode::Inherit ||
       mode == TrainMode::TweenChain || train_mode_is_frozen(mode) ||

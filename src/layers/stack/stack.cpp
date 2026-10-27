@@ -102,6 +102,40 @@ Status child_forward(Child& c, const TensorF32& input, TensorF32* pre, TensorF32
   }
   case Kind::Parallel:
     return with_parallel(c,[&](parallel::Layer& l){return parallel::forward(l,input,pre,post);});
+  case Kind::View: {
+    int need = 1;
+    post->shape.clear();
+    post->shape.reserve(c.view_shape.size());
+    for (int d : c.view_shape) {
+      if (d <= 0)
+        return Status::Err(StatusCode::InvalidArgument, "stack: View bad dim");
+      need *= d;
+      post->shape.push_back(d);
+    }
+    if (static_cast<int>(input.data.size()) != need)
+      return Status::Err(StatusCode::InvalidArgument, "stack: View size mismatch");
+    *pre = input;
+    post->data = input.data;
+    return Status::Ok();
+  }
+  case Kind::Flatten: {
+    int batch = input.shape.empty() ? 1 : static_cast<int>(input.shape[0]);
+    if (batch <= 0)
+      batch = 1;
+    int feat = c.flatten_feat;
+    const int n = static_cast<int>(input.data.size());
+    if (feat <= 0) {
+      if (n % batch != 0)
+        return Status::Err(StatusCode::InvalidArgument, "stack: Flatten cannot infer feat");
+      feat = n / batch;
+    }
+    if (n != batch * feat)
+      return Status::Err(StatusCode::InvalidArgument, "stack: Flatten size mismatch");
+    *pre = input;
+    post->shape = {batch, feat};
+    post->data = input.data;
+    return Status::Ok();
+  }
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child kind");
   }
@@ -164,6 +198,17 @@ Status child_backward(Child& c, const TensorF32& grad_out, const TensorF32& inpu
   }
   case Kind::Parallel:
     return with_parallel(c,[&](parallel::Layer& l){return parallel::backward_f32(l,grad_out,input,pre,grad_in,grad_w);});
+  case Kind::View:
+  case Kind::Flatten: {
+    grad_in->shape = input.shape;
+    grad_in->data.assign(input.data.size(), 0.0f);
+    const std::size_t n = std::min(grad_in->data.size(), grad_out.data.size());
+    for (std::size_t i = 0; i < n; ++i)
+      grad_in->data[i] = grad_out.data[i];
+    grad_w->shape.clear();
+    grad_w->data.clear();
+    return Status::Ok();
+  }
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child bwd");
   }
@@ -228,6 +273,9 @@ Status child_apply_sgd(Child* c, const TensorF32& dW, double lr) {
   }
   case Kind::Parallel:
     return with_parallel(*c,[&](parallel::Layer& l){return parallel::apply_grad_sgd(&l,dW,lr);});
+  case Kind::View:
+  case Kind::Flatten:
+    return Status::Ok(); // zero-weight
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child sgd");
   }
@@ -374,6 +422,9 @@ Status child_export_f32(const Child& c, float* dst) {
     }
     return Status::Ok();
   }
+  case Kind::View:
+  case Kind::Flatten:
+    return Status::Ok();
   default:
     return Status::Err(StatusCode::InvalidArgument, "stack: unsupported child export");
   }

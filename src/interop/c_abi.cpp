@@ -77,8 +77,8 @@ welvet::Status make_nested_stack_dense(int dim, int n_children, welvet::Activati
 extern "C" {
 
 const char* welvet_version(void) {
-  // VERSIONING.md: 68/100 independently evidenced engine subgates.
-  return "0.68";
+  // 0.70: Mesh* sparse-host volume fallback when step clock leaves empty output.
+  return "0.70";
 }
 
 const char* welvet_runtime_identity(void) {
