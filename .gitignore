@@ -19,3 +19,5 @@ src/.write_ok
 
 # Local release packages, checksums and generated notes
 /dist/
+
+build-ios-arm64/
